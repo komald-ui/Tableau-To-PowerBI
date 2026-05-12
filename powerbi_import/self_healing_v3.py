@@ -1651,6 +1651,341 @@ def _heal_m_dataflow_ref_dangling(model, recovery=None) -> int:
 
 
 # ════════════════════════════════════════════════════════════════════
+#  v3.5 — Sprint 144 — Phase 4 Zero-Error: model-side healers
+# ════════════════════════════════════════════════════════════════════
+
+_VALID_DAX_FUNCS: set | None = None
+
+
+def _heal_dax_unbalanced_brackets(model, recovery=None) -> int:
+    """Detect unbalanced ``[`` / ``]`` in DAX expressions and strip extras."""
+    repairs = 0
+    for tbl in model.get('model', {}).get('tables', []) or []:
+        tname = tbl.get('name', '') or ''
+        for item in list(tbl.get('measures', []) or []) + list(tbl.get('columns', []) or []):
+            expr = item.get('expression') or ''
+            if not expr:
+                continue
+            opens = expr.count('[')
+            closes = expr.count(']')
+            if opens != closes:
+                item_name = item.get('name', '?')
+                if opens > closes:
+                    expr += ']' * (opens - closes)
+                else:
+                    # remove excess trailing ]
+                    excess = closes - opens
+                    chars = list(expr)
+                    removed = 0
+                    for i in range(len(chars) - 1, -1, -1):
+                        if chars[i] == ']' and removed < excess:
+                            chars.pop(i)
+                            removed += 1
+                    expr = ''.join(chars)
+                item['expression'] = expr
+                repairs += 1
+                if recovery is not None:
+                    recovery.record(
+                        'tmdl', 'dax_unbalanced_brackets',
+                        item_name=f'{tname}.{item_name}',
+                        description=f'Unbalanced [ ] ({opens} open, {closes} close)',
+                        action='Appended/removed brackets to balance',
+                        severity='warning',
+                    )
+    return repairs
+
+
+_UNSUPPORTED_FUNCS_RE = re.compile(
+    r'\b(MAKEPOINT|MAKELINE|MAKECONNECTION|SCRIPT_BOOL|SCRIPT_INT|SCRIPT_REAL|SCRIPT_STR)\s*\(',
+    re.IGNORECASE,
+)
+
+
+def _heal_dax_unknown_function(model, recovery=None) -> int:
+    """Replace unsupported function calls with BLANK() + TODO comment."""
+    repairs = 0
+    for tbl in model.get('model', {}).get('tables', []) or []:
+        tname = tbl.get('name', '') or ''
+        for item in tbl.get('measures', []) or []:
+            expr = item.get('expression') or ''
+            m = _UNSUPPORTED_FUNCS_RE.search(expr)
+            if m:
+                fn = m.group(1)
+                item['expression'] = f'/* TODO: {fn} has no DAX equivalent */ BLANK()'
+                repairs += 1
+                if recovery is not None:
+                    recovery.record(
+                        'tmdl', 'dax_unknown_function',
+                        item_name=f'{tname}.{item.get("name", "?")}',
+                        description=f'Unsupported function {fn}()',
+                        action=f'Replaced with BLANK() (no DAX equivalent)',
+                        severity='warning',
+                        follow_up=f'Implement {fn} logic manually',
+                    )
+    return repairs
+
+
+def _heal_dax_circular_dependency(model, recovery=None) -> int:
+    """Detect measure A→B→A circular references; break with BLANK()."""
+    repairs = 0
+    # Build adjacency: measure_fullname -> set of referenced measure fullnames
+    all_measures = {}  # (table, name) -> expression
+    for tbl in model.get('model', {}).get('tables', []) or []:
+        tname = tbl.get('name', '') or ''
+        for m in tbl.get('measures', []) or []:
+            mname = m.get('name', '') or ''
+            all_measures[(tname, mname)] = m
+
+    # Build reference graph
+    refs = {}  # (table, name) -> set of (table, name)
+    for key, m in all_measures.items():
+        expr = m.get('expression') or ''
+        targets = set()
+        for other_key in all_measures:
+            if other_key == key:
+                continue
+            ot, on = other_key
+            if f'[{on}]' in expr:
+                targets.add(other_key)
+        refs[key] = targets
+
+    # Detect cycles: simple DFS for 2-node cycles
+    broken = set()
+    for key, targets in refs.items():
+        for t in targets:
+            if t in refs and key in refs.get(t, set()) and t not in broken:
+                # Circular: break the second measure
+                m_obj = all_measures[t]
+                orig = m_obj.get('expression', '')
+                m_obj['expression'] = f'/* TODO: circular dependency with {key[1]} */ BLANK()'
+                broken.add(t)
+                repairs += 1
+                if recovery is not None:
+                    recovery.record(
+                        'tmdl', 'dax_circular_dependency',
+                        item_name=f'{t[0]}.{t[1]}',
+                        description=f'Circular reference between [{key[1]}] and [{t[1]}]',
+                        action=f'Replaced with BLANK(); original: {orig[:80]}',
+                        severity='warning',
+                        follow_up='Refactor DAX to break circular dependency',
+                    )
+    return repairs
+
+
+def _heal_relationship_orphan_table(model, recovery=None) -> int:
+    """Remove relationships referencing tables that don't exist in model."""
+    repairs = 0
+    tables = {(t.get('name', '') or '').lower()
+              for t in model.get('model', {}).get('tables', []) or []}
+    rels = model.get('model', {}).get('relationships', []) or []
+    cleaned = []
+    for rel in rels:
+        from_tbl = (rel.get('fromTable') or '').lower()
+        to_tbl = (rel.get('toTable') or '').lower()
+        if from_tbl not in tables or to_tbl not in tables:
+            repairs += 1
+            missing = from_tbl if from_tbl not in tables else to_tbl
+            if recovery is not None:
+                recovery.record(
+                    'relationship', 'relationship_orphan_table',
+                    item_name=f'{rel.get("fromTable")}->{rel.get("toTable")}',
+                    description=f'Table "{missing}" does not exist in model',
+                    action='Relationship removed',
+                    severity='warning',
+                )
+        else:
+            cleaned.append(rel)
+    if repairs:
+        model['model']['relationships'] = cleaned
+    return repairs
+
+
+def _heal_relationship_self_loop(model, recovery=None) -> int:
+    """Remove self-referencing relationships (fromTable == toTable + fromColumn == toColumn)."""
+    repairs = 0
+    rels = model.get('model', {}).get('relationships', []) or []
+    cleaned = []
+    for rel in rels:
+        ft = (rel.get('fromTable') or '').lower()
+        tt = (rel.get('toTable') or '').lower()
+        fc = (rel.get('fromColumn') or '').lower()
+        tc = (rel.get('toColumn') or '').lower()
+        if ft == tt and fc == tc:
+            repairs += 1
+            if recovery is not None:
+                recovery.record(
+                    'relationship', 'relationship_self_loop',
+                    item_name=f'{rel.get("fromTable")}.{rel.get("fromColumn")}',
+                    description='Self-referencing relationship (same table and column)',
+                    action='Relationship removed',
+                    severity='warning',
+                )
+        else:
+            cleaned.append(rel)
+    if repairs:
+        model['model']['relationships'] = cleaned
+    return repairs
+
+
+def _heal_column_duplicate_name_case(model, recovery=None) -> int:
+    """Rename columns that differ only in case (PBI is case-insensitive)."""
+    repairs = 0
+    for tbl in model.get('model', {}).get('tables', []) or []:
+        tname = tbl.get('name', '') or ''
+        seen: dict[str, str] = {}  # lower-name -> first-name
+        for col in tbl.get('columns', []) or []:
+            cname = col.get('name', '') or ''
+            key = cname.lower()
+            if key in seen and seen[key] != cname:
+                # Rename the duplicate
+                new_name = f'{cname}_{tname}'.replace(' ', '_')
+                col['name'] = new_name
+                repairs += 1
+                if recovery is not None:
+                    recovery.record(
+                        'tmdl', 'column_duplicate_name_case',
+                        item_name=f'{tname}.{cname}',
+                        description=f'Case-insensitive duplicate of "{seen[key]}"',
+                        action=f'Renamed to "{new_name}"',
+                        severity='warning',
+                    )
+            else:
+                seen[key] = cname
+    return repairs
+
+
+_VALID_DATATYPES_LOWER = {'string', 'int64', 'double', 'decimal', 'boolean',
+                          'datetime', 'binary', 'int32', 'currency', 'variant'}
+
+
+def _heal_column_invalid_datatype(model, recovery=None) -> int:
+    """Fix columns with truly invalid datatype values.
+
+    Note: casing normalization (``Double`` → ``double``) is already handled
+    by ``_heal_datatype_casing`` — this healer only catches datatypes whose
+    lowercased form doesn't match any known TMDL type.
+    """
+    repairs = 0
+    for tbl in model.get('model', {}).get('tables', []) or []:
+        tname = tbl.get('name', '') or ''
+        for col in tbl.get('columns', []) or []:
+            dt = col.get('dataType') or ''
+            if not dt:
+                continue
+            if dt.lower() in _VALID_DATATYPES_LOWER:
+                continue  # casing handled by datatype_casing healer
+            # Truly unknown type — default to string
+            col['dataType'] = 'string'
+            repairs += 1
+            if recovery is not None:
+                recovery.record(
+                    'tmdl', 'column_invalid_datatype',
+                    item_name=f'{tname}.{col.get("name", "?")}',
+                    description=f'Unknown datatype "{dt}"',
+                    action='Defaulted to "string"',
+                    severity='warning',
+                )
+    return repairs
+
+
+def _heal_partition_empty_m(model, recovery=None) -> int:
+    """Replace empty M partitions with a minimal valid expression."""
+    repairs = 0
+    for tbl in model.get('model', {}).get('tables', []) or []:
+        tname = tbl.get('name', '') or ''
+        for part in tbl.get('partitions', []) or []:
+            src = part.get('source') or {}
+            if src.get('type') == 'm':
+                expr = (src.get('expression') or '').strip()
+                if not expr or expr in ('null', 'None', '""'):
+                    src['expression'] = (
+                        'let\n'
+                        f'    Source = #table({{"Column1"}}, {{}})\n'
+                        'in\n'
+                        '    Source'
+                    )
+                    repairs += 1
+                    if recovery is not None:
+                        recovery.record(
+                            'm_query', 'partition_empty_m',
+                            item_name=tname,
+                            description='M partition expression was empty/null',
+                            action='Replaced with minimal #table stub',
+                            severity='warning',
+                            follow_up='Replace with actual data source query',
+                        )
+    return repairs
+
+
+def _heal_parameter_default_out_of_domain(model, recovery=None) -> int:
+    """Fix parameter defaults that aren't in the allowable values list."""
+    repairs = 0
+    for tbl in model.get('model', {}).get('tables', []) or []:
+        tname = tbl.get('name', '') or ''
+        for col in tbl.get('columns', []) or []:
+            # Parameters are typically modeled as columns on parameter tables
+            # with expression containing DATATABLE or GENERATESERIES
+            pass
+        for m in tbl.get('measures', []) or []:
+            # Check for SELECTEDVALUE-based parameter measures
+            expr = m.get('expression') or ''
+            if 'SELECTEDVALUE' not in expr:
+                continue
+            # Check annotations for parameter metadata
+            for ann in m.get('annotations', []) or []:
+                if ann.get('name') == 'ParameterDefaultValue':
+                    default_val = ann.get('value', '')
+                    domain_ann = next(
+                        (a for a in m.get('annotations', []) or []
+                         if a.get('name') == 'ParameterAllowableValues'),
+                        None,
+                    )
+                    if domain_ann:
+                        allowed_str = domain_ann.get('value', '')
+                        allowed = [v.strip() for v in allowed_str.split(',') if v.strip()]
+                        if allowed and default_val and default_val not in allowed:
+                            ann['value'] = allowed[0]
+                            repairs += 1
+                            if recovery is not None:
+                                recovery.record(
+                                    'tmdl', 'parameter_default_out_of_domain',
+                                    item_name=f'{tname}.{m.get("name", "?")}',
+                                    description=f'Default "{default_val}" not in [{", ".join(allowed[:5])}]',
+                                    action=f'Changed default to "{allowed[0]}"',
+                                    severity='warning',
+                                )
+    return repairs
+
+
+def _heal_rls_missing_table_permission(model, recovery=None) -> int:
+    """Flag RLS roles that have no tablePermission entries."""
+    repairs = 0
+    for role in model.get('model', {}).get('roles', []) or []:
+        rname = role.get('name', '') or ''
+        perms = role.get('tablePermissions', []) or []
+        if not perms:
+            # Add a placeholder permission to prevent PBI Desktop error
+            tables = model.get('model', {}).get('tables', []) or []
+            if tables:
+                first_table = tables[0].get('name', 'Table')
+                role['tablePermissions'] = [{
+                    'name': first_table,
+                    'filterExpression': 'TRUE()',
+                }]
+                repairs += 1
+                if recovery is not None:
+                    recovery.record(
+                        'tmdl', 'rls_missing_table_permission',
+                        item_name=rname,
+                        description='RLS role has no tablePermissions',
+                        action=f'Added placeholder TRUE() on "{first_table}"',
+                        severity='warning',
+                        follow_up='Replace placeholder with actual RLS filter',
+                    )
+    return repairs
+
+
+# ════════════════════════════════════════════════════════════════════
 #  Public entry point
 # ════════════════════════════════════════════════════════════════════
 
@@ -1698,6 +2033,17 @@ _V3_HEALERS = (
     ('m_credential_in_expression', _heal_m_credential_in_expression),
     ('m_partition_mode_mismatch', _heal_m_partition_mode_mismatch),
     ('m_dataflow_ref_dangling', _heal_m_dataflow_ref_dangling),
+    # v3.5 — Sprint 144 — Phase 4 Zero-Error: model-side healers
+    ('dax_unbalanced_brackets', _heal_dax_unbalanced_brackets),
+    ('dax_unknown_function', _heal_dax_unknown_function),
+    ('dax_circular_dependency', _heal_dax_circular_dependency),
+    ('relationship_orphan_table', _heal_relationship_orphan_table),
+    ('relationship_self_loop', _heal_relationship_self_loop),
+    ('column_duplicate_name_case', _heal_column_duplicate_name_case),
+    ('column_invalid_datatype', _heal_column_invalid_datatype),
+    ('partition_empty_m', _heal_partition_empty_m),
+    ('parameter_default_out_of_domain', _heal_parameter_default_out_of_domain),
+    ('rls_missing_table_permission', _heal_rls_missing_table_permission),
 )
 
 

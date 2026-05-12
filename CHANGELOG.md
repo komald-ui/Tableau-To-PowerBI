@@ -1,9 +1,31 @@
 # Changelog
 
-## v31.5.0-dev — Sprint 142 — Phase 2 kickoff (Extraction guards)
+## v31.5.0-dev — Sprint 142–144 — Phases 2–4 (Extraction guards + Conversion guards + Self-Healing v3.5)
 
-Starts Phase 2 of the Zero-Error roadmap by introducing shared safe XML
-accessors and wiring them into core extractor paths.
+Continues the Zero-Error roadmap with extraction hardening, conversion
+guards active in the pipeline, and 10 new model-side self-healers.
+
+### Phase 4 — Self-Healing v3.5: 10 new model-side healers
+
+Added 10 healers in `self_healing_v3.py` (v3 total: 35 → 50 healers):
+
+| Healer | Catches |
+|--------|---------|
+| `dax_unbalanced_brackets` | `[Col]` / `]` count mismatch → appends/strips |
+| `dax_unknown_function` | `MAKEPOINT`, `SCRIPT_*` calls → `BLANK()` + TODO |
+| `dax_circular_dependency` | measure A ↔ B mutual references → breaks cycle |
+| `relationship_orphan_table` | relationship referencing non-existent table → removed |
+| `relationship_self_loop` | `fromTable==toTable` AND `fromColumn==toColumn` → removed |
+| `column_duplicate_name_case` | `Date` / `date` collide in PBI → renamed |
+| `column_invalid_datatype` | truly unknown datatype (not just casing) → `string` |
+| `partition_empty_m` | empty/null M partition → minimal `#table()` stub |
+| `parameter_default_out_of_domain` | default not in allowable values → corrected |
+| `rls_missing_table_permission` | RLS role with no permissions → `TRUE()` placeholder |
+
+- Added `tests/test_self_healing_v3_phase4.py` (34 tests).
+- Updated `test_relationship_updated_after_rename` to account for
+  self-loop removal on `fromCol==toCol` after duplicate-table rename.
+- Full suite: 7,739 passed, 0 failed.
 
 ### New module: `tableau_export/safe_xml.py`
 

@@ -1295,8 +1295,8 @@ class TestMDataflowRefDangling(unittest.TestCase):
 class TestRunAllV3Healers(unittest.TestCase):
 
     def test_v3_healers_count(self):
-        # Sanity-check that all 40 healers (v3 + v3.1 + v3.2 + v3.3) are wired
-        self.assertEqual(len(_V3_HEALERS), 40)
+        # Sanity-check that all 50 healers (v3 + v3.1 + v3.2 + v3.3 + v3.5) are wired
+        self.assertEqual(len(_V3_HEALERS), 50)
 
     def test_runs_all_on_clean_model(self):
         m = _model([{'name': 'T', 'columns': [
