@@ -69,7 +69,7 @@ def _visual(name, visual_json=None):
 
 class TestRegistry(unittest.TestCase):
     def test_eleven_healers(self):
-        self.assertEqual(len(_REPORT_HEALERS), 11)
+        self.assertEqual(len(_REPORT_HEALERS), 21)
 
     def test_run_on_empty_state_returns_zero(self):
         self.assertEqual(run_report_healers(None), 0)

@@ -1,6 +1,6 @@
 # Changelog
 
-## v31.5.0-dev — Sprint 142–144 — Phases 2–4 (Extraction guards + Conversion guards + Self-Healing v3.5)
+## v31.5.0-dev — Sprint 142–145 — Phases 2–5 (Extraction guards + Conversion guards + Self-Healing v3.5 + Self-Healing v3.6)
 
 Continues the Zero-Error roadmap with extraction hardening, conversion
 guards active in the pipeline, and 10 new model-side self-healers.
@@ -26,6 +26,26 @@ Added 10 healers in `self_healing_v3.py` (v3 total: 35 → 50 healers):
 - Updated `test_relationship_updated_after_rename` to account for
   self-loop removal on `fromCol==toCol` after duplicate-table rename.
 - Full suite: 7,739 passed, 0 failed.
+
+### Phase 5 — Self-Healing v3.6: 10 new report-side healers
+
+Added 10 healers in `self_healing_report.py` (report total: 11 → 21 healers):
+
+| Healer | Catches |
+|--------|--------|
+| `visual_overlap_full` | 100% overlapping visuals → stagger by 32px |
+| `visual_filter_unknown_field` | report filter referencing non-existent column → removed |
+| `visual_query_unknown_measure` | suspicious Tableau field ref in query → tagged |
+| `slicer_targets_missing_field` | slicer with no target field → tagged |
+| `bookmark_targets_missing_visual` | bookmark visual states for deleted visuals → removed |
+| `theme_dataColors_empty` | empty theme palette → injected 8-color default |
+| `page_no_visuals` | empty page → tagged with MigrationNote |
+| `pagesmeta_duplicate_pageorder` | duplicate page entries → deduplicated |
+| `tooltip_page_oversized` | tooltip > 480×320 → clamped |
+| `mobile_layout_orphan_visual` | mobile layout orphan visual refs → removed |
+
+- Added `tests/test_self_healing_report_phase5.py` (31 tests).
+- Full suite: 7,770 passed, 0 failed.
 
 ### New module: `tableau_export/safe_xml.py`
 

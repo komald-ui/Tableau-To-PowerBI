@@ -570,6 +570,354 @@ def _heal_visual_query_no_select(state, recovery=None) -> int:
 
 
 # ════════════════════════════════════════════════════════════════════
+#  Phase 5 — v3.6 report healers (Sprint 145)
+# ════════════════════════════════════════════════════════════════════
+
+
+def _heal_visual_overlap_full(state, recovery=None) -> int:
+    """Two visuals with identical (x, y, width, height) on the same page →
+    stagger the second by 32 px on both axes so PBI Desktop doesn't hide one."""
+    repairs = 0
+    for page in state['pages']:
+        seen: Dict[tuple, Dict[str, Any]] = {}  # (x,y,w,h) → first visual json
+        for visual in page['visuals']:
+            vj = visual['json']
+            pos = vj.get('position') if isinstance(vj.get('position'), dict) else None
+            if pos is None:
+                continue
+            key = (pos.get('x', 0), pos.get('y', 0),
+                   pos.get('width', 0), pos.get('height', 0))
+            if key in seen:
+                pos['x'] = pos.get('x', 0) + 32
+                pos['y'] = pos.get('y', 0) + 32
+                _mark_dirty(state, os.path.join(visual['dir'], 'visual.json'))
+                _record(recovery, 'visual_overlap_full', visual['name'],
+                        'info',
+                        f"Visual fully overlaps another at ({key[0]},{key[1]})",
+                        'Staggered by +32 px on x and y')
+                repairs += 1
+            else:
+                seen[key] = vj
+    return repairs
+
+
+def _heal_visual_filter_unknown_field(state, recovery=None) -> int:
+    """Report/page/visual filter references a column not present in any
+    visual's queryState on the same page. Remove the filter entry."""
+    repairs = 0
+    # Collect all known field names across all visuals
+    known_fields: set = set()
+    for page in state['pages']:
+        for visual in page['visuals']:
+            vj = visual['json']
+            vblock = vj.get('visual') if isinstance(vj.get('visual'), dict) else None
+            if not vblock:
+                continue
+            qs = vblock.get('query', {}).get('queryState') if isinstance(vblock.get('query'), dict) else None
+            if isinstance(qs, dict):
+                for role_val in qs.values():
+                    if isinstance(role_val, dict):
+                        for proj in (role_val.get('projections') or []):
+                            if isinstance(proj, dict):
+                                field = proj.get('field', {})
+                                col = field.get('Column', {}).get('Property') if isinstance(field.get('Column'), dict) else None
+                                measure = field.get('Measure', {}).get('Property') if isinstance(field.get('Measure'), dict) else None
+                                if col:
+                                    known_fields.add(col)
+                                if measure:
+                                    known_fields.add(measure)
+    if not known_fields:
+        return 0
+    # Check report-level filters
+    rj = state['report_json']
+    rfilters = rj.get('filters') if isinstance(rj.get('filters'), list) else None
+    if rfilters is not None:
+        keep = []
+        for f in rfilters:
+            if not isinstance(f, dict):
+                keep.append(f)
+                continue
+            fname = f.get('name') or f.get('field') or ''
+            if fname and fname not in known_fields:
+                _record(recovery, 'visual_filter_unknown_field', fname,
+                        'warning',
+                        f"Report filter references unknown field '{fname}'",
+                        'Removed dangling report filter')
+                repairs += 1
+                continue
+            keep.append(f)
+        if repairs:
+            rj['filters'] = keep
+            _mark_dirty(state, os.path.join(state['def_dir'], 'report.json'))
+    return repairs
+
+
+def _heal_visual_query_unknown_measure(state, recovery=None) -> int:
+    """Visual query projects a measure name that looks like a raw Tableau
+    field ref (contains ``//`` or ``[``+``]`` with dots). Tag with
+    MigrationNote — we can't remove the projection safely."""
+    repairs = 0
+    import re
+    _BAD_REF = re.compile(r'\[.*\..*\]|//')
+    for page in state['pages']:
+        for visual in page['visuals']:
+            vj = visual['json']
+            vblock = vj.get('visual') if isinstance(vj.get('visual'), dict) else None
+            if not vblock:
+                continue
+            qs = vblock.get('query', {}).get('queryState') if isinstance(vblock.get('query'), dict) else None
+            if not isinstance(qs, dict):
+                continue
+            for role_val in qs.values():
+                if not isinstance(role_val, dict):
+                    continue
+                for proj in (role_val.get('projections') or []):
+                    if not isinstance(proj, dict):
+                        continue
+                    field = proj.get('field', {})
+                    prop = None
+                    if isinstance(field.get('Measure'), dict):
+                        prop = field['Measure'].get('Property', '')
+                    elif isinstance(field.get('Column'), dict):
+                        prop = field['Column'].get('Property', '')
+                    if prop and _BAD_REF.search(prop):
+                        notes = vblock.setdefault('annotations', [])
+                        if not any(isinstance(a, dict) and a.get('name') == 'MigrationNote_BadRef'
+                                   for a in notes):
+                            notes.append({
+                                'name': 'MigrationNote_BadRef',
+                                'value': f'Suspicious field ref: {prop}',
+                            })
+                            _mark_dirty(state, os.path.join(visual['dir'], 'visual.json'))
+                            _record(recovery, 'visual_query_unknown_measure',
+                                    visual['name'], 'warning',
+                                    f"Query references suspicious field '{prop}'",
+                                    'Tagged with MigrationNote_BadRef')
+                            repairs += 1
+    return repairs
+
+
+def _heal_slicer_targets_missing_field(state, recovery=None) -> int:
+    """Slicer visual whose target column name is empty or whitespace-only →
+    PBI Desktop renders a blank slicer with no data. Tag with MigrationNote."""
+    repairs = 0
+    for page in state['pages']:
+        for visual in page['visuals']:
+            vj = visual['json']
+            vblock = vj.get('visual') if isinstance(vj.get('visual'), dict) else None
+            if not vblock:
+                continue
+            if vblock.get('visualType') != 'slicer':
+                continue
+            qs = vblock.get('query', {}).get('queryState') if isinstance(vblock.get('query'), dict) else None
+            if not isinstance(qs, dict):
+                continue
+            has_field = False
+            for role_val in qs.values():
+                if isinstance(role_val, dict):
+                    for proj in (role_val.get('projections') or []):
+                        if isinstance(proj, dict) and proj.get('field'):
+                            has_field = True
+                            break
+                if has_field:
+                    break
+            if not has_field:
+                notes = vblock.setdefault('annotations', [])
+                if not any(isinstance(a, dict) and a.get('name') == 'MigrationNote_SlicerNoField'
+                           for a in notes):
+                    notes.append({
+                        'name': 'MigrationNote_SlicerNoField',
+                        'value': 'Slicer has no target field configured',
+                    })
+                    _mark_dirty(state, os.path.join(visual['dir'], 'visual.json'))
+                    _record(recovery, 'slicer_targets_missing_field',
+                            visual['name'], 'warning',
+                            'Slicer visual has no field projections',
+                            'Tagged with MigrationNote_SlicerNoField')
+                    repairs += 1
+    return repairs
+
+
+def _heal_bookmark_targets_missing_visual(state, recovery=None) -> int:
+    """Bookmark ``explorationState.visualStates`` references a visual GUID
+    that doesn't exist on the target page. Remove the orphan entry."""
+    repairs = 0
+    rj = state['report_json']
+    bookmarks = rj.get('bookmarks')
+    if not isinstance(bookmarks, list):
+        return 0
+    all_visual_ids: set = set()
+    for page in state['pages']:
+        for visual in page['visuals']:
+            all_visual_ids.add(visual['name'])
+    changed = False
+    for bm in bookmarks:
+        if not isinstance(bm, dict):
+            continue
+        es = bm.get('explorationState')
+        if not isinstance(es, dict):
+            continue
+        vs = es.get('visualStates')
+        if not isinstance(vs, dict):
+            continue
+        bad_keys = [k for k in vs if k not in all_visual_ids]
+        for k in bad_keys:
+            del vs[k]
+            _record(recovery, 'bookmark_targets_missing_visual',
+                    bm.get('name', 'unnamed'),
+                    'info',
+                    f"Bookmark visual state references non-existent visual '{k}'",
+                    'Removed orphan visual state entry')
+            repairs += 1
+            changed = True
+    if changed:
+        _mark_dirty(state, os.path.join(state['def_dir'], 'report.json'))
+    return repairs
+
+
+def _heal_theme_dataColors_empty(state, recovery=None) -> int:
+    """Theme JSON with empty ``dataColors`` array → PBI Desktop falls back to
+    grey. Inject a safe default palette."""
+    _DEFAULT_PALETTE = [
+        '#118DFF', '#12239E', '#E66C37', '#6B007B',
+        '#E044A7', '#744EC2', '#D9B300', '#D64550',
+    ]
+    rj = state['report_json']
+    resources = rj.get('resourcePackages')
+    if not isinstance(resources, list):
+        return 0
+    repairs = 0
+    for rp in resources:
+        if not isinstance(rp, dict):
+            continue
+        items = rp.get('items')
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            content = item.get('content')
+            if not isinstance(content, dict):
+                continue
+            theme = content.get('theme')
+            if not isinstance(theme, dict):
+                continue
+            dc = theme.get('dataColors')
+            if isinstance(dc, list) and len(dc) == 0:
+                theme['dataColors'] = list(_DEFAULT_PALETTE)
+                _mark_dirty(state, os.path.join(state['def_dir'], 'report.json'))
+                _record(recovery, 'theme_dataColors_empty', 'theme',
+                        'warning',
+                        'Theme dataColors array was empty',
+                        'Injected default 8-color palette')
+                repairs += 1
+    return repairs
+
+
+def _heal_page_no_visuals(state, recovery=None) -> int:
+    """Page with zero visuals → add MigrationNote annotation to page.json.
+    PBI Desktop shows a blank page but doesn't error."""
+    repairs = 0
+    for page in state['pages']:
+        if page['visuals']:
+            continue
+        pj = page['json']
+        annotations = pj.setdefault('annotations', [])
+        if any(isinstance(a, dict) and a.get('name') == 'MigrationNote_EmptyPage'
+               for a in annotations):
+            continue
+        annotations.append({
+            'name': 'MigrationNote_EmptyPage',
+            'value': 'Page has no visuals — review migration output',
+        })
+        _mark_dirty(state, os.path.join(page['dir'], 'page.json'))
+        _record(recovery, 'page_no_visuals', page['name'],
+                'info',
+                'Page contains zero visuals',
+                'Tagged with MigrationNote_EmptyPage')
+        repairs += 1
+    return repairs
+
+
+def _heal_pagesmeta_duplicate_pageorder(state, recovery=None) -> int:
+    """``pageOrder`` array in pages.json lists the same page name more than
+    once → PBI Desktop shows the page twice in the navigator. Deduplicate."""
+    pm = state['pages_metadata']
+    order = pm.get('pageOrder')
+    if not isinstance(order, list) or len(order) < 2:
+        return 0
+    seen: set = set()
+    deduped: list = []
+    dupes = 0
+    for name in order:
+        if name in seen:
+            dupes += 1
+        else:
+            seen.add(name)
+            deduped.append(name)
+    if dupes == 0:
+        return 0
+    pm['pageOrder'] = deduped
+    _mark_dirty(state, os.path.join(state['pages_dir'], 'pages.json'))
+    _record(recovery, 'pagesmeta_duplicate_pageorder', 'pages.json',
+            'warning',
+            f'{dupes} duplicate entries in pageOrder',
+            'Deduplicated pageOrder')
+    return dupes
+
+
+def _heal_tooltip_page_oversized(state, recovery=None) -> int:
+    """Tooltip page whose dimensions exceed 480×320 → PBI Desktop warns.
+    Clamp to the canonical tooltip size."""
+    _TOOLTIP_W = 480
+    _TOOLTIP_H = 320
+    repairs = 0
+    for page in state['pages']:
+        pj = page['json']
+        if pj.get('pageType') != 'Tooltip':
+            continue
+        w = pj.get('width', _TOOLTIP_W)
+        h = pj.get('height', _TOOLTIP_H)
+        if w <= _TOOLTIP_W and h <= _TOOLTIP_H:
+            continue
+        pj['width'] = min(w, _TOOLTIP_W)
+        pj['height'] = min(h, _TOOLTIP_H)
+        _mark_dirty(state, os.path.join(page['dir'], 'page.json'))
+        _record(recovery, 'tooltip_page_oversized', page['name'],
+                'info',
+                f'Tooltip page was {w}×{h} (max 480×320)',
+                f"Clamped to {pj['width']}×{pj['height']}")
+        repairs += 1
+    return repairs
+
+
+def _heal_mobile_layout_orphan_visual(state, recovery=None) -> int:
+    """Mobile layout references visual GUIDs that no longer exist on the
+    page. Remove orphan entries."""
+    repairs = 0
+    for page in state['pages']:
+        pj = page['json']
+        mobile = pj.get('mobileState')
+        if not isinstance(mobile, dict):
+            continue
+        visuals_layout = mobile.get('visuals')
+        if not isinstance(visuals_layout, dict):
+            continue
+        page_visual_ids = {v['name'] for v in page['visuals']}
+        orphans = [k for k in visuals_layout if k not in page_visual_ids]
+        for k in orphans:
+            del visuals_layout[k]
+            _record(recovery, 'mobile_layout_orphan_visual', page['name'],
+                    'info',
+                    f"Mobile layout references non-existent visual '{k}'",
+                    'Removed orphan mobile visual entry')
+            repairs += 1
+        if orphans:
+            _mark_dirty(state, os.path.join(page['dir'], 'page.json'))
+    return repairs
+
+
+# ════════════════════════════════════════════════════════════════════
 #  Healer registry
 # ════════════════════════════════════════════════════════════════════
 
@@ -586,11 +934,22 @@ _REPORT_HEALERS = (
     _heal_pagesmeta_orphan_pageorder,        # 9
     _heal_pagesmeta_missing_active,          # 10
     _heal_visual_query_no_select,            # 11
+    # v3.6 — Phase 5 report-side healers
+    _heal_visual_overlap_full,               # 12
+    _heal_visual_filter_unknown_field,       # 13
+    _heal_visual_query_unknown_measure,      # 14
+    _heal_slicer_targets_missing_field,      # 15
+    _heal_bookmark_targets_missing_visual,   # 16
+    _heal_theme_dataColors_empty,            # 17
+    _heal_page_no_visuals,                   # 18
+    _heal_pagesmeta_duplicate_pageorder,     # 19
+    _heal_tooltip_page_oversized,            # 20
+    _heal_mobile_layout_orphan_visual,       # 21
 )
 
 
 def run_report_healers(state, recovery=None) -> int:
-    """Run all v3.4 report healers on a loaded ReportState. Never raises."""
+    """Run all v3.4+v3.6 report healers on a loaded ReportState. Never raises."""
     if not state:
         return 0
     total = 0
