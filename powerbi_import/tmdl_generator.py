@@ -1103,6 +1103,14 @@ def _self_heal_model(model, recovery=None):
                                         follow_up=f"Fix column reference [{ref_col}] in measure '{mname}'")
                     break
 
+    # Sprint 136 — Self-Healing v3: 11 additional healers covering common
+    # PBI Desktop "won't open" / "data refresh failed" scenarios.
+    try:
+        from powerbi_import.self_healing_v3 import run_v3_healers
+        repairs += run_v3_healers(model, recovery=recovery)
+    except Exception:  # never block migration
+        pass
+
     return repairs
 
 

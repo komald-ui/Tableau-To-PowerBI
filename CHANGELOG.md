@@ -1,5 +1,38 @@
 # Changelog
 
+## v31.0.0 — Sprint 136 — Self-Healing v3 (PBI Desktop load/refresh resilience)
+
+Major upgrade to the self-healing engine adding **11 new healers** that catch
+the most common reasons a generated `.pbip` refuses to open in Power BI
+Desktop or fails to refresh data. Brings total healer count to **24**.
+
+New module: `powerbi_import/self_healing_v3.py`. Wired into
+`tmdl_generator._self_heal_model()` after the existing 13 healers; defensive
+try/except per healer ensures self-healing never blocks migration.
+
+**11 new healers:**
+
+| # | Healer | Failure mode caught |
+|---|--------|----------------------|
+| 14 | `global_measure_dupes` | Same measure name on two tables → "Cannot create measure" load error. Renames to `<name>_<table>` with `MigrationNote`. |
+| 15 | `self_referencing_measures` | `[A] = [A] + 1` → infinite recursion. Sets to `BLANK()` and hides. |
+| 16/17 | `sort_by_column` | `sortByColumn` self-reference or pointing to missing column → cleared. |
+| 18 | `hierarchies` | Hierarchy levels referencing missing columns → drops level; drops hierarchy if empty. Supports both `column` and `sourceColumn` aliases. |
+| 19 | `display_folders` | Whitespace-only segments, leading/trailing space, double-backslash → normalized; empty folders removed. |
+| 20 | `relationship_type_mismatch` | String↔Int64 join → "data type mismatch" at refresh. Removes incompatible relationships. |
+| 21 | `invalid_identifiers` | Control chars (NUL/TAB/LF/CR) in table/column/measure names → stripped; relationships rewired after table renames. |
+| 22 | `int64_decimal_format` | Int64 column with `0.00` formatString → fractional part lost. Promotes to Double. |
+| 23 | `datatype_casing` | `INT64`, `Datetime`, `integer` → normalized to canonical (`int64`, `dateTime`). Both TitleCase (`Int64`) and lowercase (`int64`) accepted. |
+| 24 | `duplicate_relationships` | Identical fromTable/fromColumn/toTable/toColumn → keep first active, deactivate rest (avoids "ambiguous join path"). |
+| 25 | `hidden_key` | Hidden+isKey column on Calendar/date table → un-hidden so PBI Desktop can use it for date intelligence. |
+
+**Implementation:**
+- All healers are pure `(model, recovery=None) -> int` functions — never raise.
+- `run_v3_healers()` orchestrates with per-healer try/except + recovery logging.
+- Each repair is recorded in `RecoveryReport` with category `tmdl` or `relationship`, severity `info`/`warning`/`error`.
+- 64 new tests in `tests/test_self_healing_v3.py` covering all healers + integration + wiring + defensive error handling.
+- **7,455 tests passing** (+64 from v28.5.8). Zero regressions.
+
 ## v28.5.8 — Code Optimization & Documentation Update
 
 - **Performance: early-exit in `_ensure_comparison_spacing()`**: Skip the regex split entirely when the formula contains no `<` or `>` characters — saves ~0.5ms per measure for the majority of formulas that have no comparison operators.
