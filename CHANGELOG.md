@@ -53,6 +53,29 @@ accessors and wiring them into core extractor paths.
     relationship input, and metadata fallback behavior.
 - Extraction regression suite remains green.
 
+### Phase 3 wiring — Conversion guards active in generation pipeline
+
+- **tmdl_generator.py** — main calc processing loop now passes
+  `validate_output=True, fallback_on_invalid=True` to the DAX converter.
+  Invalid DAX output is replaced with a safe `/* TODO */ BLANK()` stub
+  and logged as a warning instead of silently emitting malformed formulas.
+- **tmdl_generator.py** — RLS role generation now uses the same guarded
+  converter mode for security filter expressions.
+- **tmdl_generator.py** — post-processing sweep validates all measure
+  expressions after SUM-of-measure unwrap and cross-table wrapping passes;
+  any that fail validation are replaced with a TODO/BLANK() stub.
+- **tmdl_generator.py** — `_inject_m_steps_into_partition` now runs the
+  M validator on the resulting expression after step injection and logs
+  any structural issues.
+- **dax_validator.py** — expanded Tableau function leak regex to match full
+  compound function names (`WINDOW_SUM`, `RUNNING_AVG`, `RANK_DENSE`, etc.)
+  instead of bare prefixes that missed word boundaries.
+- Extended `tests/test_dax_validator_phase3.py` from 8 → 20 tests:
+  - Added `None` expression handling, block comment edge cases, escaped
+    quotes, complex valid DAX, 12 Tableau leak tokens, M injection
+    validation, post-processing sweep, clean formula passthrough.
+- Full regression: 7,705 passed, 0 failed.
+
 ### Phase 3 foundation started (Conversion guards)
 
 - Added `powerbi_import/dax_validator.py` with lightweight DAX validation

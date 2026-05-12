@@ -406,13 +406,29 @@ def _wrap_date_subtraction_in_duration_days(m_expr, columns, col_metadata_map):
 
 
 def _inject_m_steps_into_partition(table, steps):
-    """Inject M transformation steps into a table's M partition."""
+    """Inject M transformation steps into a table's M partition.
+
+    Phase 3: validates the resulting M expression after injection.
+    Issues are logged but do not block generation.
+    """
     if not steps:
         return False
     for partition in table.get('partitions', []):
         source = partition.get('source', {})
         if source.get('type') == 'm' and source.get('expression'):
             source['expression'] = inject_m_steps(source['expression'], steps)
+            # Phase 3: inline M validation after step injection
+            try:
+                from powerbi_import.m_validator import validate_m_query
+                m_issues = validate_m_query(source['expression'])
+                if m_issues:
+                    tname = table.get('name', '<unknown>')
+                    logger.warning(
+                        "M validation issue after step injection on '%s': %s",
+                        tname, m_issues[0],
+                    )
+            except Exception:
+                pass  # validator must never block generation
             return True
     return False
 
@@ -2579,8 +2595,17 @@ def _build_table(table, connection, calculations, columns_metadata, dax_context=
             compute_using=dax_context.get('compute_using_map', {}).get(calc_name)
                           or dax_context.get('compute_using_map', {}).get(caption),
             table_columns=_this_table_columns,
-            bool_columns=_bool_table_columns
+            bool_columns=_bool_table_columns,
+            validate_output=True,
+            fallback_on_invalid=True,
         )
+
+        # Phase 3: record conversion guard fallback to recovery
+        if dax_formula and 'TODO: DAX conversion validation failed' in dax_formula:
+            logger.warning(
+                "DAX conversion guard triggered for '%s' on table '%s'",
+                calc_name, table_name,
+            )
 
         if is_calc_col:
             # Post-process: inline literal-value measure references
@@ -2876,6 +2901,24 @@ def _build_table(table, connection, calculations, columns_metadata, dax_context=
             )
         if new_expr != expr:
             meas["expression"] = new_expr
+
+    # ── Phase 3: Post-processing DAX validation sweep ──
+    # After all rewrites (SUM-of-measure unwrap, bare column wrapping),
+    # validate every measure expression one more time.
+    try:
+        from powerbi_import.dax_validator import validate_dax_expression as _validate_dax
+        for meas in result_table["measures"]:
+            m_expr = meas.get("expression", "")
+            if not m_expr or 'TODO: DAX conversion validation failed' in m_expr:
+                continue
+            issues = _validate_dax(m_expr)
+            if issues:
+                logger.warning(
+                    "Post-processing DAX validation issue in measure '%s': %s",
+                    meas.get("name", ""), issues[0],
+                )
+    except Exception:
+        pass  # validator must never block generation
 
     # Inject accumulated M steps into the partition (replaces DAX calc cols)
     if m_calc_steps:
@@ -4561,8 +4604,15 @@ def _create_rls_roles(model, user_filters, main_table_name, column_table_map):
                 dax_filter = convert_tableau_formula_to_dax(
                     formula,
                     table_name=main_table_name,
-                    column_table_map=column_table_map
+                    column_table_map=column_table_map,
+                    validate_output=True,
+                    fallback_on_invalid=True,
                 )
+                if dax_filter and 'TODO: DAX conversion validation failed' in dax_filter:
+                    logger.warning(
+                        "RLS DAX conversion guard triggered for '%s'",
+                        calc_name,
+                    )
 
                 role_name = _unique_role_name(calc_name, role_names)
                 role_names.add(role_name)

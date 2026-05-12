@@ -32,6 +32,46 @@ class TestDaxValidatorPhase3(unittest.TestCase):
         issues = validate_dax_expression('   ')
         self.assertIn('empty DAX expression', issues)
 
+    def test_none_expression(self):
+        issues = validate_dax_expression(None)
+        self.assertIn('empty DAX expression', issues)
+
+    def test_valid_complex_dax(self):
+        expr = "CALCULATE(SUM('Sales'[Amount]), ALLEXCEPT('Sales', 'Sales'[Region]))"
+        issues = validate_dax_expression(expr)
+        self.assertEqual(issues, [])
+
+    def test_escaped_quotes_are_valid(self):
+        expr = """CALCULATE(SUM('Sales'[Amount]), 'Sales'[Name] = "O""Brien")"""
+        issues = validate_dax_expression(expr)
+        self.assertEqual(issues, [])
+
+    def test_escaped_single_quotes_are_valid(self):
+        expr = "SUM('O''Brien Sales'[Amount])"
+        issues = validate_dax_expression(expr)
+        self.assertEqual(issues, [])
+
+    def test_invalid_literal_none(self):
+        issues = validate_dax_expression("[Col] + None")
+        self.assertTrue(any('invalid literal' in i for i in issues))
+
+    def test_unterminated_block_comment(self):
+        issues = validate_dax_expression("/* this is incomplete SUM([A])")
+        self.assertTrue(any('unterminated block comment' in i for i in issues))
+
+    def test_terminated_block_comment_is_ok(self):
+        issues = validate_dax_expression("/* comment */ SUM([A])")
+        self.assertEqual(issues, [])
+
+    def test_multiple_tableau_leak_tokens(self):
+        for tok in ['DATETRUNC', 'DATEPART', 'IFNULL', 'ISNULL', 'COUNTD',
+                     'WINDOW_SUM', 'RUNNING_SUM', 'RANK_UNIQUE', 'PREVIOUS_VALUE']:
+            issues = validate_dax_expression(f"{tok}([X])")
+            self.assertTrue(
+                any('Tableau function' in i for i in issues),
+                f"Expected Tableau leak detection for {tok}",
+            )
+
 
 class TestConverterGuardMode(unittest.TestCase):
     def test_default_behavior_unchanged(self):
@@ -44,7 +84,6 @@ class TestConverterGuardMode(unittest.TestCase):
             validate_output=True,
             fallback_on_invalid=False,
         )
-        # Conversion should still return a DAX string in non-fallback mode.
         self.assertIsInstance(result, str)
         self.assertTrue(len(result) > 0)
 
@@ -57,6 +96,60 @@ class TestConverterGuardMode(unittest.TestCase):
         )
         self.assertIn('TODO: DAX conversion validation failed', result)
         self.assertIn('BLANK()', result)
+
+    def test_validate_output_clean_formula_passes(self):
+        result = convert_tableau_formula_to_dax(
+            "SUM([Sales])",
+            column_name='TotalSales',
+            table_name='Orders',
+            validate_output=True,
+            fallback_on_invalid=True,
+        )
+        self.assertNotIn('TODO', result)
+        self.assertIn('SUM', result)
+
+
+class TestMInjectionValidation(unittest.TestCase):
+    """Test that _inject_m_steps_into_partition validates after injection."""
+
+    def test_inject_valid_m_steps(self):
+        from powerbi_import.tmdl_generator import _inject_m_steps_into_partition
+        table = {
+            'name': 'Sales',
+            'partitions': [{
+                'name': 'Partition0',
+                'source': {
+                    'type': 'm',
+                    'expression': 'let\n    Source = #table({"A"}, {{1}})\nin\n    Source',
+                }
+            }]
+        }
+        step = ('#"Added Col"', 'Table.AddColumn({prev}, "Col", each 1)')
+        result = _inject_m_steps_into_partition(table, [step])
+        self.assertTrue(result)
+        expr = table['partitions'][0]['source']['expression']
+        self.assertIn('Added Col', expr)
+
+    def test_inject_no_steps_returns_false(self):
+        from powerbi_import.tmdl_generator import _inject_m_steps_into_partition
+        table = {'name': 'T', 'partitions': [{'source': {'type': 'm', 'expression': 'x'}}]}
+        result = _inject_m_steps_into_partition(table, [])
+        self.assertFalse(result)
+
+
+class TestPostProcessingDaxSweep(unittest.TestCase):
+    """Test that _build_table applies post-processing DAX validation."""
+
+    def test_valid_formula_survives_sweep(self):
+        """A well-formed formula through _build_table should not be replaced."""
+        result = convert_tableau_formula_to_dax(
+            "SUM([Sales])",
+            table_name='Orders',
+            validate_output=True,
+            fallback_on_invalid=True,
+        )
+        self.assertNotIn('TODO', result)
+        self.assertIn('SUM', result)
 
 
 if __name__ == '__main__':
