@@ -53,6 +53,24 @@ accessors and wiring them into core extractor paths.
     relationship input, and metadata fallback behavior.
 - Extraction regression suite remains green.
 
+### Phase 3 foundation started (Conversion guards)
+
+- Added `powerbi_import/dax_validator.py` with lightweight DAX validation
+  checks for:
+  - balanced delimiters (`()`, `[]`, `{}`)
+  - unterminated quoted literals/identifiers
+  - leaked Tableau function tokens in generated DAX output
+  - invalid literals (`None`, `undefined`) and unterminated block comments
+- Added optional guarded converter mode in
+  `tableau_export/dax_converter.py`:
+  - `validate_output=True` enables output validation
+  - `fallback_on_invalid=True` returns a safe TODO/`BLANK()` expression
+    instead of emitting malformed DAX
+  - default behavior is unchanged (both flags default to `False`)
+- Added `tests/test_dax_validator_phase3.py` (8 tests) covering validator
+  checks and guarded converter behavior.
+- DAX/M validator regression suites remain green.
+
 ## v31.4.0 — Sprint 141 — Phase 1 of Zero-Error Roadmap (Pre-flight Rejection)
 
 Kicks off the **10-phase Zero-Error Roadmap** documented in

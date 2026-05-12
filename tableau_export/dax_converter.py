@@ -248,7 +248,9 @@ def convert_tableau_formula_to_dax(formula, column_name='Measure', table_name='T
                                     is_calc_column=False, param_values=None,
                                     calc_datatype=None, partition_fields=None,
                                     compute_using=None, table_columns=None,
-                                    bool_columns=None):
+                                    bool_columns=None,
+                                    validate_output=False,
+                                    fallback_on_invalid=False):
     """
     Converts a Tableau formula to DAX with context resolution.
     
@@ -266,6 +268,8 @@ def convert_tableau_formula_to_dax(formula, column_name='Measure', table_name='T
         partition_fields: List of field names for table calc partitioning (COMPUTE USING)
             (deprecated — use compute_using instead)
         compute_using: list of dimension names for table calc addressing/partitioning
+        validate_output: If True, run Phase 3 DAX validation on output
+        fallback_on_invalid: If True and validation fails, return TODO/BLANK fallback
     
     Returns:
         str: Valid DAX formula
@@ -423,6 +427,21 @@ def convert_tableau_formula_to_dax(formula, column_name='Measure', table_name='T
 
     # === Phase 6b: Fix date literals ===
     dax = _fix_date_literals(dax)
+
+    # === Phase 7: Optional conversion guard validation (Phase 3 foundation) ===
+    if validate_output:
+        try:
+            from powerbi_import.dax_validator import validate_dax_expression
+            issues = validate_dax_expression(dax)
+        except (ImportError, OSError, ValueError):
+            issues = []
+
+        if issues and fallback_on_invalid:
+            preview = issues[0]
+            return (
+                f'/* TODO: DAX conversion validation failed for {column_name}: {preview} */ '
+                'BLANK()'
+            )
 
     return dax
 
