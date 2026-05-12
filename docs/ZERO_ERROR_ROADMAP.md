@@ -254,7 +254,7 @@ Every sprint must:
 | 4 — Self-Healing v3.5 | 144 | v31.7.0 | ✅ Shipped | — |
 | 5 — Self-Healing v3.6 | 145 | v31.8.0 | ✅ Shipped | — |
 | 6 — Cross-artifact validator | 146 | v31.9.0 | ✅ Shipped | — |
-| 7 — Schema validator | 147 | v31.10.0 | ⏸ Planned | — |
+| 7 — Schema validator | 147 | v31.10.0 | ✅ Shipped | — |
 | 8 — Equivalence in CI | 148 | v32.0.0 | ⏸ Planned | — |
 | 9 — Auto-rollback | 149 | v32.1.0 | ⏸ Planned | — |
 | 10 — Feedback loop | 150 | v32.2.0 | ⏸ Planned | **Target ≥ 99 %** |

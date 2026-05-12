@@ -1,6 +1,6 @@
 # Changelog
 
-## v31.5.0-dev — Sprint 142–146 — Phases 2–6 (Extraction guards + Conversion guards + Self-Healing v3.5/v3.6 + Cross-artifact validator)
+## v31.5.0-dev — Sprint 142–147 — Phases 2–7 (Extraction guards + Conversion guards + Self-Healing v3.5/v3.6 + Cross-artifact validator + Schema validator)
 
 Continues the Zero-Error roadmap with extraction hardening, conversion
 guards active in the pipeline, and 10 new model-side self-healers.
@@ -63,6 +63,22 @@ New `powerbi_import/cross_validator.py` bridging TMDL model ↔ PBIR report:
 - `CrossIssue` dataclass with category/severity/message/location
 - Added `tests/test_cross_validator.py` (27 tests).
 - Full suite: 7,797 passed, 0 failed.
+
+### Phase 7 — PBI Desktop Schema Validator
+
+New `powerbi_import/schema_validator.py` for deep structural validation of PBIR v4.0 artifacts:
+
+- Validates `$schema` URL version correctness against what we actually emit
+- Type checking: position fields must be numbers (auto-coerces strings)
+- Value constraints: width/height > 0, non-negative dimensions
+- Visual type membership check (118+ known types)
+- Nested structure validation: themeCollection, position, query, explorationState
+- Bookmark, pages-metadata, definition.pbir deep checks
+- `validate_artifact()` and `validate_report_dir()` public APIs
+- `SchemaResult` with `.ok`, `.errors`, `.warnings`, `.repairs`, `.to_dict()`
+- Fixed `validator.py` schema version mismatch (page 2.0.0→2.1.0, visual 2.5.0→2.7.0)
+- Added `tests/test_schema_validator.py` (53 tests).
+- Full suite: 7,850 passed, 0 failed.
 
 ### New module: `tableau_export/safe_xml.py`
 

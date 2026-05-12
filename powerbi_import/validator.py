@@ -52,10 +52,12 @@ class ArtifactValidator:
 
     VALID_PAGE_SCHEMAS = [
         'https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/2.0.0/schema.json',
+        'https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/2.1.0/schema.json',
     ]
 
     VALID_VISUAL_SCHEMAS = [
         'https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json',
+        'https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.7.0/schema.json',
     ]
 
     # ── PBIR structural schemas (lightweight, no external dependency) ──
