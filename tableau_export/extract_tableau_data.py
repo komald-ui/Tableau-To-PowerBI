@@ -15,6 +15,24 @@ from datetime import datetime
 import re
 from datasource_extractor import extract_datasource
 from hyper_reader import read_hyper_from_twbx
+try:
+    from .safe_xml import (
+        ExtractionWarning,
+        ExtractionWarningCode,
+        safe_find,
+        safe_findall,
+        safe_findtext,
+        safe_get_attr,
+    )
+except ImportError:
+    from safe_xml import (
+        ExtractionWarning,
+        ExtractionWarningCode,
+        safe_find,
+        safe_findall,
+        safe_findtext,
+        safe_get_attr,
+    )
 
 # Import security utilities — resolve path to powerbi_import
 _PI_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'powerbi_import')
@@ -147,9 +165,15 @@ class TableauExtractor:
         self.tableau_file = tableau_file
         self.output_dir = output_dir
         self.workbook_data = {}
+        self.extraction_warnings = []
         self.hyper_max_rows = hyper_max_rows or 20
         
         os.makedirs(self.output_dir, exist_ok=True)
+
+    def _warn_extraction(self, code, message, context=''):
+        """Record a non-fatal extraction warning for diagnostics."""
+        warning = ExtractionWarning(code=code, message=message, context=context)
+        self.extraction_warnings.append(warning.as_dict())
     
     def extract_all(self):
         """Extracts all objects from the Tableau workbook"""
@@ -233,9 +257,19 @@ class TableauExtractor:
                     normalized = name.replace('\\', '/')
                     if '..' in normalized.split('/'):
                         logger.warning("Skipping ZIP entry with path traversal: %s", name)
+                        self._warn_extraction(
+                            ExtractionWarningCode.UNSAFE_ZIP_ENTRY.value,
+                            'Skipped ZIP entry with path traversal',
+                            context=name,
+                        )
                         continue
                     if os.path.isabs(name):
                         logger.warning("Skipping ZIP entry with absolute path: %s", name)
+                        self._warn_extraction(
+                            ExtractionWarningCode.UNSAFE_ZIP_ENTRY.value,
+                            'Skipped ZIP entry with absolute path',
+                            context=name,
+                        )
                         continue
 
                     if name.endswith('.twb') or name.endswith('.tds'):
@@ -253,9 +287,9 @@ class TableauExtractor:
         
         worksheets = []
         
-        for worksheet in root.findall('.//worksheet'):
+        for worksheet in safe_findall(root, './/worksheet'):
             ws_data = {
-                'name': worksheet.get('name', ''),
+            'name': safe_get_attr(worksheet, 'name', ''),
                 'title': self._extract_title_text(worksheet),
                 'title_format': self._extract_title_format(worksheet),
                 'chart_type': self.determine_chart_type(worksheet),
@@ -293,17 +327,17 @@ class TableauExtractor:
         
         dashboards = []
         
-        for dashboard in root.findall('.//dashboard'):
-            size_elem = dashboard.find('size')
+        for dashboard in safe_findall(root, './/dashboard'):
+            size_elem = safe_find(dashboard, 'size')
             if size_elem is not None:
-                db_width = _safe_int(size_elem.get('maxwidth', size_elem.get('minwidth', '1280')))
-                db_height = _safe_int(size_elem.get('maxheight', size_elem.get('minheight', '720')))
+                db_width = _safe_int(safe_get_attr(size_elem, 'maxwidth', safe_get_attr(size_elem, 'minwidth', '1280')))
+                db_height = _safe_int(safe_get_attr(size_elem, 'maxheight', safe_get_attr(size_elem, 'minheight', '720')))
             else:
-                db_width = _safe_int(dashboard.get('width', 1280))
-                db_height = _safe_int(dashboard.get('height', 720))
+                db_width = _safe_int(safe_get_attr(dashboard, 'width', 1280))
+                db_height = _safe_int(safe_get_attr(dashboard, 'height', 720))
             db_data = {
-                'name': dashboard.get('name', ''),
-                'title': dashboard.findtext('.//title', ''),
+                'name': safe_get_attr(dashboard, 'name', ''),
+                'title': safe_findtext(dashboard, './/title', ''),
                 'size': {
                     'width': db_width,
                     'height': db_height,
@@ -334,7 +368,7 @@ class TableauExtractor:
         
         raw_datasources = []
         
-        for datasource in root.findall('.//datasource'):
+        for datasource in safe_findall(root, './/datasource'):
             ds_data = extract_datasource(datasource, twbx_path=self.tableau_file)
             raw_datasources.append(ds_data)
         
@@ -374,7 +408,7 @@ class TableauExtractor:
         calculations = []
         seen_names = set()
         
-        for datasource in root.findall('.//datasource'):
+        for datasource in safe_findall(root, './/datasource'):
             ds_data = extract_datasource(datasource, twbx_path=self.tableau_file)
             for calc in ds_data.get('calculations', []):
                 cname = calc.get('name', '')
@@ -393,24 +427,24 @@ class TableauExtractor:
         for ds_name, ds in ds_by_name.items():
             ds_seen[ds_name] = {c.get('name', '') for c in ds.get('calculations', [])}
 
-        for ws in root.findall('.//worksheet'):
-            for dep in ws.findall('.//datasource-dependencies'):
-                ds_ref = dep.get('datasource', '')
-                for col_elem in dep.findall('column'):
-                    calc_elem = col_elem.find('calculation')
+        for ws in safe_findall(root, './/worksheet'):
+            for dep in safe_findall(ws, './/datasource-dependencies'):
+                ds_ref = safe_get_attr(dep, 'datasource', '')
+                for col_elem in safe_findall(dep, 'column'):
+                    calc_elem = safe_find(col_elem, 'calculation')
                     if calc_elem is None:
                         continue
-                    calc_formula = calc_elem.get('formula', '').strip()
+                    calc_formula = safe_get_attr(calc_elem, 'formula', '').strip()
                     if not calc_formula:
                         continue
-                    calc_class = calc_elem.get('class', 'tableau')
+                    calc_class = safe_get_attr(calc_elem, 'class', 'tableau')
                     if calc_class == 'categorical-bin':
                         continue
-                    cname = col_elem.get('name', '')
+                    cname = safe_get_attr(col_elem, 'name', '')
                     if cname in seen_names:
                         continue
                     seen_names.add(cname)
-                    raw_caption = col_elem.get('caption', cname)
+                    raw_caption = safe_get_attr(col_elem, 'caption', cname)
                     # If caption looks like a formula (auto-generated by
                     # Tableau), sanitize: strip brackets for a cleaner name
                     if '[' in raw_caption and ']' in raw_caption:
@@ -420,9 +454,9 @@ class TableauExtractor:
                         'caption': raw_caption,
                         'formula': calc_formula,
                         'class': calc_class,
-                        'datatype': col_elem.get('datatype', 'real'),
-                        'role': col_elem.get('role', 'measure'),
-                        'type': col_elem.get('type', 'quantitative'),
+                        'datatype': safe_get_attr(col_elem, 'datatype', 'real'),
+                        'role': safe_get_attr(col_elem, 'role', 'measure'),
+                        'type': safe_get_attr(col_elem, 'type', 'quantitative'),
                     }
                     calculations.append(calc_entry)
                     # Also inject into the parent datasource so the TMDL

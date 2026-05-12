@@ -1,5 +1,35 @@
 # Changelog
 
+## v31.5.0-dev — Sprint 142 — Phase 2 kickoff (Extraction guards)
+
+Starts Phase 2 of the Zero-Error roadmap by introducing shared safe XML
+accessors and wiring them into core extractor paths.
+
+### New module: `tableau_export/safe_xml.py`
+
+- Added `safe_get_attr`, `safe_find`, `safe_findall`, and `safe_findtext`
+  wrappers to avoid non-fatal `AttributeError`/lookup failures when XML nodes
+  are missing or malformed.
+- Added `ExtractionWarningCode` and `ExtractionWarning` primitives to
+  standardize warning payloads emitted by guardrails.
+
+### Extractor integration
+
+- `tableau_export/extract_tableau_data.py` now uses safe wrappers in key
+  extraction loops (`worksheets`, `dashboards`, `datasources`, and
+  worksheet-level calculation dependency traversal).
+- Added `self.extraction_warnings` and `_warn_extraction()` on
+  `TableauExtractor`.
+- Archive traversal defenses now persist structured warnings when skipping
+  unsafe ZIP entries (path traversal and absolute path members).
+
+### Tests
+
+- Added `tests/test_safe_xml.py` with 11 tests covering helper behavior,
+  warning serialization, and extractor warning capture on unsafe `.twbx`
+  members.
+- Extraction regression suite remains green.
+
 ## v31.4.0 — Sprint 141 — Phase 1 of Zero-Error Roadmap (Pre-flight Rejection)
 
 Kicks off the **10-phase Zero-Error Roadmap** documented in
