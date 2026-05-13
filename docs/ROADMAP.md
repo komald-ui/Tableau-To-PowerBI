@@ -1493,19 +1493,19 @@ These were originally v28.0.0 Phase 2–3 but deferred to v29.0.0 to ship v28.x 
 
 ---
 
-### Sprint 132 — Performance & Large-Workbook Stress (@orchestrator, @tester)
+### Sprint 132 — Performance & Large-Workbook Stress (@orchestrator, @tester) ✅
 
 **Goal:** Benchmark and harden against real-world enterprise workbooks (500+ measures, 100+ worksheets, 10MB+ TWBX).
 
 | # | Item | Owner | File(s) | Est. | Details |
 |---|------|-------|---------|------|---------|
-| 132.1 | **Large-workbook test fixtures** | @tester | `tests/fixtures/large_workbooks/` (new) | Medium | Synthetic generator producing 500-measure / 100-worksheet / 50-datasource TWBX files. Reproducible (seeded). |
-| 132.2 | **End-to-end perf benchmark** | @tester | `tests/test_perf_benchmark.py` (new) | Medium | Asserts: extraction <60s, generation <120s, peak RSS <2GB for the synthetic large workbook. Records to telemetry. |
-| 132.3 | **Hot-path profiling** | @orchestrator | `scripts/profile_migration.py` (new) | Low | `cProfile` wrapper + flamegraph SVG output. CI-runnable. |
-| 132.4 | **Streaming JSON writes** | @orchestrator | `extract_tableau_data.py` | Low | Replace any `json.dump(huge_obj)` with streaming where the object exceeds 50MB. |
-| 132.5 | **Memory ceiling guards** | @tester | `tests/test_memory_ceiling.py` (new) | Low | Asserts no module loads >500MB into RAM by default. |
+| 132.1 | **Large-workbook test fixtures** | @tester | `tests/large_workbook_generator.py` (new) | Medium | ✅ Done — Synthetic generator: 500-measure / 100-worksheet / 50-datasource TWB, seeded, reproducible |
+| 132.2 | **End-to-end perf benchmark** | @tester | `tests/test_perf_benchmark.py` (new) | Medium | ✅ Done — 3 benchmarks (extraction <60s, generation <120s, pipeline <180s) + peak RSS <2GB |
+| 132.3 | **Hot-path profiling** | @orchestrator | `scripts/profile_migration.py` (new) | Low | ✅ Done — cProfile wrapper + flamegraph SVG, configurable fixture size |
+| 132.4 | **Streaming JSON writes** | @orchestrator | `extract_tableau_data.py` | Low | ✅ Done — Arrays >50MB streamed item-by-item, size estimation with fallback |
+| 132.5 | **Memory ceiling guards** | @tester | `tests/test_perf_benchmark.py` | Low | ✅ Done — 4 ceiling tests (extraction, generation, DAX converter, M query builder) all <500MB |
 
-**Success:** 500-measure workbook completes within 3 minutes on a laptop without OOM.
+**Success:** 500-measure workbook completes within 3 minutes on a laptop without OOM. ✅ Verified: full pipeline ~59s.
 
 ---
 

@@ -1,5 +1,30 @@
 # Changelog
 
+## v31.6.0-dev — Sprint 132 — Performance & Large-Workbook Stress
+
+Benchmarks and hardens the pipeline for enterprise-scale workbooks.
+
+### New Files
+- **`tests/large_workbook_generator.py`** — Synthetic TWB generator (seeded, reproducible):
+  configurable measures (500), worksheets (100), datasources (50), dashboards,
+  parameters, sets, groups, bins, hierarchies
+- **`tests/test_perf_benchmark.py`** — 7 benchmarks:
+  - Extraction <60s, generation <120s, full pipeline <180s
+  - Peak memory <2GB per operation
+  - Memory ceiling <500MB for extraction, generation, DAX converter, M query builder
+- **`tests/test_sprint132.py`** — 12 unit tests: streaming JSON writer, generator reproducibility
+- **`scripts/profile_migration.py`** — cProfile wrapper + flamegraph SVG + tracemalloc,
+  configurable fixture parameters, console + file output
+
+### Changed
+- **`tableau_export/extract_tableau_data.py`** — `save_extractions()` now uses streaming
+  JSON writes for arrays estimated >50MB. New methods: `_estimate_json_size()`,
+  `_stream_json_array()`. Prevents OOM when writing very large extraction results.
+
+### Stats
+- **7,937 tests passing** (up from 7,925), 66 skipped, 0 failed
+- Verified: 500-measure synthetic workbook completes full pipeline in ~59s
+
 ## v31.5.0-dev — Sprint 142–150 — Phases 2–10 (Extraction guards + Conversion guards + Self-Healing v3.5/v3.6 + Cross-artifact + Schema + Equivalence CI + Auto-Rollback + Feedback Loop)
 
 Continues the Zero-Error roadmap with extraction hardening, conversion

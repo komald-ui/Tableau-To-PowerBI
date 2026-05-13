@@ -3501,8 +3501,17 @@ class TableauExtractor:
         self.workbook_data['linguistic_schema'] = synonyms
         print(f"  ✓ {len(synonyms)} linguistic synonyms extracted")
 
+    # Threshold for streaming JSON writes (50 MB estimated).
+    # Objects larger than this are streamed item-by-item to avoid
+    # materializing the entire JSON string in memory.
+    _STREAM_THRESHOLD_BYTES = 50 * 1024 * 1024
+
     def save_extractions(self):
-        """Saves extractions to JSON"""
+        """Saves extractions to JSON.
+
+        Uses streaming writes for large arrays (>50 MB estimated) to
+        avoid holding the entire serialized JSON in memory at once.
+        """
         from datetime import date, datetime, time
 
         def _json_default(obj):
@@ -3517,9 +3526,58 @@ class TableauExtractor:
 
         for obj_type, data in self.workbook_data.items():
             output_path = os.path.join(self.output_dir, f'{obj_type}.json')
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False, default=_json_default)
+            estimated_size = self._estimate_json_size(data)
+            if isinstance(data, list) and estimated_size > self._STREAM_THRESHOLD_BYTES:
+                self._stream_json_array(output_path, data, _json_default)
+            else:
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False, default=_json_default)
             print(f"  → {output_path}")
+
+    @staticmethod
+    def _estimate_json_size(data):
+        """Estimate serialized JSON size without building the full string.
+
+        For lists, samples the first few items and extrapolates.
+        For dicts, uses repr length as a rough proxy.
+        """
+        if isinstance(data, list):
+            if not data:
+                return 2  # "[]"
+            # Sample up to 5 items — use repr as fallback if json.dumps fails
+            sample_count = min(5, len(data))
+            sample_size = 0
+            for i in range(sample_count):
+                try:
+                    sample_size += len(json.dumps(data[i], ensure_ascii=False))
+                except (TypeError, ValueError):
+                    sample_size += len(repr(data[i]))
+            avg_item = sample_size / sample_count
+            # Account for indent, commas, whitespace (~1.3x)
+            return int(avg_item * len(data) * 1.3)
+        if isinstance(data, dict):
+            return len(repr(data)) * 2  # rough proxy
+        return len(str(data))
+
+    @staticmethod
+    def _stream_json_array(path, items, default_fn):
+        """Write a JSON array to *path* one item at a time.
+
+        Produces valid, indented JSON identical to json.dump(items, indent=2)
+        but never materializes the full string in memory.
+        """
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write('[\n')
+            last_idx = len(items) - 1
+            for idx, item in enumerate(items):
+                chunk = json.dumps(item, indent=2, ensure_ascii=False, default=default_fn)
+                # Indent each line by 2 spaces (top-level array indent)
+                indented = '\n'.join('  ' + line for line in chunk.split('\n'))
+                f.write(indented)
+                if idx < last_idx:
+                    f.write(',')
+                f.write('\n')
+            f.write(']\n')
 
 
 def main():

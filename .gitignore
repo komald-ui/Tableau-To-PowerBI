@@ -65,6 +65,10 @@ git_result.txt
 .coverage
 htmlcov/
 
+# Generated fixtures and profiling output
+tests/fixtures/
+profile_results/
+
 # Environment
 .env
 .env.local
