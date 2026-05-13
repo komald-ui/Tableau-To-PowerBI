@@ -1,29 +1,15 @@
-<p align="center">
-  <img src="docs/images/banner.svg" alt="Tableau to Power BI — Automated Migration Tool" width="1200"/>
-</p>
+# Tableau → Power BI
 
-<p align="center">
-  <a href="https://github.com/cyphou/Tableau-To-PowerBI/actions/workflows/ci.yml"><img src="https://github.com/cyphou/Tableau-To-PowerBI/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
-  <img src="https://img.shields.io/badge/coverage-96.2%25-brightgreen?style=flat-square" alt="Coverage"/>
-  <img src="https://img.shields.io/badge/tests-7%2C099%20passed-brightgreen?style=flat-square" alt="Tests"/>
-  <img src="https://img.shields.io/badge/python-3.12%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python"/>
-  <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License"/>
-  <img src="https://img.shields.io/badge/version-28.5.8-blue?style=flat-square" alt="Version"/>
-  <img src="https://img.shields.io/badge/deps-zero-orange?style=flat-square" alt="Zero Dependencies"/>
-</p>
+**Automated Migration Tool** — convert Tableau workbooks (`.twb`/`.twbx`) to Power BI projects (`.pbip`) in seconds, fully automated, zero manual rework.
 
-<p align="center">
-  <a href="#-quick-start">Quick Start</a> •
-  <a href="#-key-features">Features</a> •
-  <a href="#-how-it-works">How It Works</a> •
-  <a href="#-dax-conversions-180-functions">DAX Mappings</a> •
-  <a href="#-deployment">Deployment</a> •
-  <a href="#-documentation">Docs</a>
-</p>
+| | |
+|---|---|
+| **Version** | 34.0.0 |
+| **Tests** | 8,088 passed · 96.2 % coverage |
+| **Python** | 3.12+ · zero external dependencies |
+| **License** | MIT |
 
-<p align="center">
-  <img src="docs/images/features.svg" alt="Key capabilities" width="1200"/>
-</p>
+| **Capabilities** | 180+ DAX conversions · 128+ visual types · 79 connectors · 20 object types |
 
 ---
 
@@ -122,23 +108,23 @@ datasources, calculations, worksheets, dashboards, filters, parameters, stories,
 
 ### 🧮 180+ DAX Conversions
 Translates Tableau formulas to DAX:
-LOD expressions, table calcs, IF/ELSEIF, ISNULL, CONTAINS, window functions, iterators (SUMX), cross-table RELATED/LOOKUPVALUE, RLS security
+LOD expressions, table calcs, IF/ELSEIF, ISNULL, CONTAINS, window functions, iterators (SUMX), cross-table RELATED/LOOKUPVALUE, RLS security, regex patterns, SPLIT, statistical functions
 
 </td>
 </tr>
 <tr>
 <td>
 
-### 📊 118+ Visual Types
+### 📊 128+ Visual Types
 Maps every Tableau mark to Power BI:
-bar, line, pie, scatter, map, treemap, waterfall, funnel, gauge, KPI, box plot, word cloud, Sankey, Chord, combo charts, and more
+bar, line, pie, scatter, map, treemap, waterfall, funnel, gauge, KPI, box plot, word cloud, Sankey, Chord, combo charts, sparklines, and more
 
 </td>
 <td>
 
-### 🔌 42 Data Connectors
+### 🔌 79 Data Connectors
 Generates Power Query M for:
-SQL Server, PostgreSQL, BigQuery, Snowflake, Oracle, MySQL, Databricks, SAP HANA, Excel, CSV, SharePoint, Salesforce, Web, OData, Azure Blob, Vertica, Impala, Presto, Fabric Lakehouse, MongoDB, Cosmos DB, Athena, DB2, and more
+SQL Server, PostgreSQL, BigQuery, Snowflake, Oracle, MySQL, Databricks, SAP HANA, Excel, CSV, SharePoint, Salesforce, Web, OData, Azure Blob, Vertica, Impala, Presto, Fabric Lakehouse, MongoDB, Cosmos DB, Athena, DB2, ServiceNow, Denodo, Essbase, Splunk, and more
 
 </td>
 </tr>
@@ -200,10 +186,6 @@ Merge multiple Tableau workbooks into **one shared semantic model** with thin re
 ---
 
 ## 🔧 How It Works
-
-<p align="center">
-  <img src="docs/images/pipeline.svg" alt="Migration Pipeline" width="800"/>
-</p>
 
 ```mermaid
 flowchart LR
@@ -500,10 +482,6 @@ SharedSales/
 
 ## 🧮 DAX Conversions (180+ functions)
 
-<p align="center">
-  <img src="docs/images/conversions.svg" alt="Tableau → DAX conversion examples" width="1100"/>
-</p>
-
 > **Full reference:** [docs/TABLEAU_TO_DAX_REFERENCE.md](docs/TABLEAU_TO_DAX_REFERENCE.md)
 
 <details>
@@ -567,7 +545,7 @@ SharedSales/
 
 ---
 
-## 📊 Visual Type Mapping (118+)
+## 📊 Visual Type Mapping (128+)
 
 <details>
 <summary><b>🎨 Full visual mapping table</b> (click to expand)</summary>
@@ -612,10 +590,6 @@ SharedSales/
 
 ## 🏗️ Architecture
 
-<p align="center">
-  <img src="docs/images/architecture.svg" alt="Architecture Diagram" width="960"/>
-</p>
-
 <details>
 <summary><b>📁 Project structure</b> (click to expand)</summary>
 
@@ -626,7 +600,7 @@ TableauToPowerBI/
 │   ├── extract_tableau_data.py                #   TWB/TWBX parser (17 object types)
 │   ├── datasource_extractor.py                #   Connection/table/calc extractor
 │   ├── dax_converter.py                       #   180+ DAX formula conversions
-│   ├── m_query_builder.py                     #   42 connectors + 43 transforms
+│   ├── m_query_builder.py                     #   79 connectors + 43 transforms
 │   ├── prep_flow_parser.py                    #   Tableau Prep flow parser
 │   ├── prep_flow_analyzer.py                  #   Prep flow profiler & assessment
 │   ├── hyper_reader.py                        #   .hyper file data loader
@@ -635,7 +609,7 @@ TableauToPowerBI/
 ├── powerbi_import/                            # Power BI generation
 │   ├── import_to_powerbi.py                   #   Orchestrator
 │   ├── pbip_generator.py                      #   .pbip project + visuals + filters
-│   ├── visual_generator.py                    #   118+ visual types, PBIR configs
+│   ├── visual_generator.py                    #   128+ visual types, PBIR configs
 │   ├── tmdl_generator.py                      #   Semantic model → TMDL
 │   ├── dax_optimizer.py                       #   DAX AST optimizer (v25)
 │   ├── assessment.py                          #   Pre-migration assessment
@@ -657,7 +631,7 @@ TableauToPowerBI/
 │   ├── schema_drift.py                        #   Schema drift detection (v28)
 │   └── deploy/                                #   Deploy to PBI Service / Fabric
 ├── Dockerfile                                 # Docker image for API server
-├── tests/                                     # 7,099 tests across 141+ files
+├── tests/                                     # 8,088 tests across 141+ files
 ├── docs/                                      # 18 documentation files
 └── examples/                                  # Sample Tableau workbooks
 ```
@@ -806,12 +780,6 @@ The validator checks `.pbip` JSON, `report.json`, `model.tmdl`, page/visual stru
 
 ## 🧪 Testing
 
-<p align="center">
-  <img src="https://img.shields.io/badge/tests-7%2C099%20passed-brightgreen?style=for-the-badge" alt="Tests"/>
-  <img src="https://img.shields.io/badge/coverage-96.2%25-brightgreen?style=for-the-badge" alt="Coverage"/>
-  <img src="https://img.shields.io/badge/test%20files-141-blue?style=for-the-badge" alt="Test Files"/>
-</p>
-
 ```bash
 python -m pytest tests/ -v                          # Run all tests
 python -m pytest tests/test_dax_converter.py -v      # Run specific file
@@ -891,7 +859,7 @@ The report shows for each migrated workbook:
 | 📝 [Changelog](CHANGELOG.md) | Release history |
 | 🔗 [Shared Model Plan](docs/SHARED_SEMANTIC_MODEL_PLAN.md) | Multi-workbook merge architecture |
 | � [Enterprise Guide](docs/ENTERPRISE_GUIDE.md) | 8-phase enterprise migration guide |
-| 🗓️ [Roadmap](docs/ROADMAP.md) | v22→v29 development roadmap |
+| 📈 [Roadmap](docs/ROADMAP.md) | Development roadmap |
 | 🤖 [Agents](docs/AGENTS.md) | 12-agent specialization model |
 | �🌐 Global Assessment | Cross-workbook merge analysis with HTML heatmap (`--global-assess`) |
 | 🚀 Bundle Deployment | Deploy shared model + reports to Fabric (`--deploy-bundle`) |
@@ -919,11 +887,6 @@ python -m pytest tests/ -q  # Make sure tests pass
 ```
 
 ---
-
-<p align="center">
-  <sub>Built with ❤️ for the Power BI community</sub><br/>
-  <sub>If this tool saves you time, consider giving it a ⭐</sub>
-</p>
 
 ## License
 
