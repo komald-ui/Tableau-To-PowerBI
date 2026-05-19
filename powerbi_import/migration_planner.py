@@ -507,3 +507,137 @@ def save_migration_plan(plan, output_dir):
 
     logger.info(f'Migration plan saved: {json_path}, {html_path}')
     return json_path, html_path
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Sprint 167 — Timeline & Topology Integration
+# ═══════════════════════════════════════════════════════════════════
+
+from datetime import datetime, timedelta
+
+
+def generate_timeline(waves, team_size=1, start_date=None,
+                      hours_per_day=6, buffer_days=2):
+    """Generate a dated timeline for migration waves.
+
+    Args:
+        waves: Wave list from assign_waves().
+        team_size: Number of concurrent migration engineers.
+        start_date: Start date string (YYYY-MM-DD) or None for today.
+        hours_per_day: Productive hours per engineer per day.
+        buffer_days: Buffer days between waves for validation.
+
+    Returns:
+        list[dict]: Waves enriched with start_date, end_date, duration_days.
+    """
+    if start_date:
+        current = datetime.strptime(start_date, '%Y-%m-%d')
+    else:
+        current = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    daily_capacity = team_size * hours_per_day
+    timeline = []
+
+    for wave in waves:
+        effort = wave.get('effort_hours', 0)
+        days_needed = max(1, math.ceil(effort / daily_capacity))
+
+        wave_start = current
+        wave_end = current + timedelta(days=days_needed - 1)
+
+        timeline.append({
+            **wave,
+            'start_date': wave_start.strftime('%Y-%m-%d'),
+            'end_date': wave_end.strftime('%Y-%m-%d'),
+            'duration_days': days_needed,
+            'team_size': team_size,
+        })
+
+        current = wave_end + timedelta(days=1 + buffer_days)
+
+    return timeline
+
+
+def generate_migration_plan_from_topology(topology, dependency_graph=None,
+                                           workspace_strategy='by_project',
+                                           max_per_wave=10, team_size=1,
+                                           start_date=None):
+    """Generate a migration plan from site topology (from dependency_graph.py).
+
+    This bridges the topology discovery output to the planning engine.
+
+    Args:
+        topology: Dict from dependency_graph.build_site_topology().
+        dependency_graph: Optional dep graph from dependency_graph.build_dependency_graph().
+        workspace_strategy: Workspace mapping strategy.
+        max_per_wave: Max workbooks per wave.
+        team_size: Number of migration engineers.
+        start_date: Start date (YYYY-MM-DD).
+
+    Returns:
+        dict: Complete migration plan with timeline.
+    """
+    # Extract workbook stats from topology
+    workbooks = []
+    for wb in topology.get('workbooks', []):
+        stats = wb.get('stats', {})
+        if not stats:
+            # Build basic stats from available info
+            stats = {
+                'visuals': wb.get('visual_count', wb.get('sheetCount', 0)),
+                'measures': 0,
+                'connectors': len(wb.get('datasource_ids', [])),
+                'rls_roles': 0,
+            }
+
+        workbooks.append({
+            'id': wb.get('id', ''),
+            'name': wb.get('name', ''),
+            'project': wb.get('project', {}).get('name', '')
+                       if isinstance(wb.get('project'), dict)
+                       else wb.get('project', 'Default'),
+            'stats': stats,
+            'datasource_ids': wb.get('datasource_ids', []),
+        })
+
+    # Build dep graph from topology if not provided
+    if not dependency_graph:
+        dep_graph = {}
+        for wb in workbooks:
+            for ds_id in wb.get('datasource_ids', []):
+                dep_graph.setdefault(ds_id, []).append(wb['id'])
+        dependency_graph = dep_graph
+
+    # Generate base plan
+    server_inventory = {
+        'workbooks': workbooks,
+        'users': topology.get('users', []),
+        'groups': topology.get('groups', []),
+        'datasources': topology.get('datasources', []),
+    }
+
+    plan = generate_migration_plan(
+        server_inventory,
+        dependency_graph=dependency_graph,
+        workspace_strategy=workspace_strategy,
+        max_per_wave=max_per_wave,
+    )
+
+    # Add timeline
+    timeline = generate_timeline(
+        plan['waves'],
+        team_size=team_size,
+        start_date=start_date,
+    )
+    plan['timeline'] = timeline
+
+    # Compute projected end date
+    if timeline:
+        plan['summary']['start_date'] = timeline[0]['start_date']
+        plan['summary']['end_date'] = timeline[-1]['end_date']
+        plan['summary']['team_size'] = team_size
+        plan['summary']['total_days'] = sum(
+            w['duration_days'] for w in timeline
+        )
+
+    return plan

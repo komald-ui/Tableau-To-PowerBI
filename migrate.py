@@ -1531,9 +1531,82 @@ def _print_batch_summary(batch_results, batch_duration, migrated_root):
     return succeeded, failed
 
 
+def _run_full_lineage(batch_results, migrated_root):
+    """Run full lineage analysis: prep flows → reports.
+
+    Connects flow outputs to workbook datasource tables, detects redundancy,
+    and identifies orphan flows that don't feed any report.
+    """
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'tableau_export'))
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'powerbi_import'))
+
+    # Collect prep flow profiles
+    profiles = [
+        r['prep_profile']
+        for r in batch_results.values()
+        if r.get('prep_flow') and r.get('success') and r.get('prep_profile')
+    ]
+
+    # Collect workbook datasources from extraction JSONs
+    wb_results = {k: v for k, v in batch_results.items() if not v.get('prep_flow') and v.get('success')}
+    if not profiles and not wb_results:
+        return
+
+    workbook_extractions: dict[str, list] = {}
+    for display_name, res in wb_results.items():
+        wb_name = res.get('report_name', display_name)
+        # Find the datasources.json from the extraction
+        out_dir = res.get('output_dir', migrated_root)
+        ds_path = None
+        # Check in extraction dir
+        for candidate in [
+            os.path.join(out_dir, 'datasources.json'),
+            os.path.join(_get_extract_dir(), 'datasources.json'),
+            os.path.join(out_dir, wb_name, 'datasources.json'),
+        ]:
+            if os.path.isfile(candidate):
+                ds_path = candidate
+                break
+        if ds_path:
+            try:
+                with open(ds_path, 'r', encoding='utf-8') as f:
+                    workbook_extractions[wb_name] = json.load(f)
+            except (OSError, json.JSONDecodeError) as e:
+                logger.warning(f"Could not load datasources for {wb_name}: {e}")
+
+    if not profiles or not workbook_extractions:
+        logger.info("Full lineage requires both prep flows and workbook extractions")
+        return
+
+    try:
+        from powerbi_import.full_lineage import build_full_lineage, print_full_lineage_summary
+    except ImportError:
+        try:
+            from full_lineage import build_full_lineage, print_full_lineage_summary
+        except ImportError:
+            logger.warning("Cannot import full_lineage module")
+            return
+
+    print_header("FULL LINEAGE: PREP FLOWS → REPORTS")
+
+    lineage = build_full_lineage(profiles, workbook_extractions)
+    print_full_lineage_summary(lineage)
+
+    # Save JSON report
+    lineage_dir = os.path.join(migrated_root, 'full_lineage')
+    os.makedirs(lineage_dir, exist_ok=True)
+    json_path = os.path.join(lineage_dir, 'full_lineage.json')
+    with open(json_path, 'w', encoding='utf-8') as f:
+        json.dump(lineage.to_dict(), f, indent=2, ensure_ascii=False)
+    print(f"  JSON report: {json_path}")
+
+    return lineage
+
+
 def run_batch_migration(batch_dir, output_dir=None, prep_file=None, skip_extraction=False,
                         calendar_start=None, calendar_end=None, culture=None,
-                        parallel=None, resume=False, jsonl_log=None, manifest=None):
+                        parallel=None, resume=False, jsonl_log=None, manifest=None,
+                        full_lineage=False):
     """Batch migrate all .twb/.twbx files in a directory (recursive).
 
     Searches the directory tree recursively for Tableau workbooks and
@@ -1746,6 +1819,10 @@ def run_batch_migration(batch_dir, output_dir=None, prep_file=None, skip_extract
 
     batch_duration = datetime.now() - batch_start
     succeeded, failed = _print_batch_summary(batch_results, batch_duration, migrated_root)
+
+    # ── Full lineage analysis (--full-lineage flag) ────────
+    if full_lineage:
+        _run_full_lineage(batch_results, migrated_root)
 
     # ── Close JSONL log ────────────────────────────────────
     fidelities = [r['fidelity'] for r in batch_results.values() if r.get('fidelity') is not None]
@@ -2321,10 +2398,139 @@ def _add_server_args(parser):
     )
 
     parser.add_argument(
+        '--server-assets',
+        metavar='TYPE',
+        nargs='+',
+        choices=['workbooks', 'flows', 'datasources', 'all'],
+        default=None,
+        help='Asset types to download from server (default: workbooks flows). '
+             'Choices: workbooks, flows, datasources, all'
+    )
+
+    parser.add_argument(
+        '--server-preserve-folders',
+        action='store_true',
+        default=False,
+        help='Mirror Tableau Server project folder structure in the download directory'
+    )
+
+    parser.add_argument(
         '--migrate-schedules',
         action='store_true',
         default=False,
         help='Extract Tableau refresh schedules / subscriptions and generate PBI refresh config JSON'
+    )
+
+    # ── Sprint 167 — Enterprise Server Migration Flags ──
+
+    parser.add_argument(
+        '--server-discover',
+        action='store_true',
+        default=False,
+        help='Discover Tableau Server site topology, build dependency graph, '
+             'and generate topology report (requires --server)'
+    )
+
+    parser.add_argument(
+        '--plan-migration',
+        action='store_true',
+        default=False,
+        help='Generate a full migration plan with wave assignments, effort estimates, '
+             'workspace mapping, and timeline (requires --server or prior --server-discover output)'
+    )
+
+    parser.add_argument(
+        '--team-size',
+        metavar='N',
+        type=int,
+        default=1,
+        help='Number of migration engineers for timeline calculation (default: 1)'
+    )
+
+    parser.add_argument(
+        '--wave-max-size',
+        metavar='N',
+        type=int,
+        default=10,
+        help='Maximum workbooks per migration wave (default: 10)'
+    )
+
+    parser.add_argument(
+        '--workspace-mapping',
+        metavar='STRATEGY',
+        choices=['by_project', 'consolidated', 'flat'],
+        default='by_project',
+        help='Workspace mapping strategy: by_project (1:1), consolidated, or flat (default: by_project)'
+    )
+
+    parser.add_argument(
+        '--map-permissions',
+        action='store_true',
+        default=False,
+        help='Map Tableau site roles to PBI workspace roles and generate Azure AD scripts'
+    )
+
+    parser.add_argument(
+        '--migrate-subscriptions',
+        action='store_true',
+        default=False,
+        help='Migrate Tableau Server subscriptions and data alerts to PBI alert rules'
+    )
+
+    parser.add_argument(
+        '--resolve-published-ds',
+        action='store_true',
+        default=False,
+        help='Resolve published (sqlproxy) datasources by downloading from Tableau Server'
+    )
+
+    parser.add_argument(
+        '--ds-cache-dir',
+        metavar='DIR',
+        default=None,
+        help='Directory to cache downloaded published datasource definitions'
+    )
+
+    parser.add_argument(
+        '--no-ds-cache',
+        action='store_true',
+        default=False,
+        help='Skip reading from the datasource cache (still writes to it)'
+    )
+
+    parser.add_argument(
+        '--clear-cache',
+        action='store_true',
+        default=False,
+        help='Clear the published datasource cache and exit'
+    )
+
+    parser.add_argument(
+        '--cutover',
+        action='store_true',
+        default=False,
+        help='Execute cutover: snapshot Tableau state, deploy PBI artifacts, validate'
+    )
+
+    parser.add_argument(
+        '--cutover-plan-only',
+        action='store_true',
+        default=False,
+        help='Generate a cutover plan without executing it'
+    )
+
+    parser.add_argument(
+        '--cutover-rollback',
+        metavar='SNAPSHOT',
+        default=None,
+        help='Roll back to a previous cutover snapshot'
+    )
+
+    parser.add_argument(
+        '--parallel-run',
+        action='store_true',
+        default=False,
+        help='Run Tableau and PBI side-by-side and compare outputs for validation'
     )
 
 
@@ -2550,6 +2756,18 @@ def _add_shared_model_args(parser):
         )
     )
 
+    parser.add_argument(
+        '--full-lineage',
+        action='store_true',
+        default=False,
+        help=(
+            'Run full lineage analysis: prep flows → reports. '
+            'Connects flow outputs to workbook datasource tables, detects '
+            'redundant sources across flows and reports, and identifies orphan flows. '
+            'Use with --batch or --server-batch to analyze an entire portfolio.'
+        )
+    )
+
 
 def _build_argument_parser():
     """Build and return the CLI argument parser."""
@@ -2609,6 +2827,167 @@ def _apply_config_file(args):
         print(f"Warning: Failed to load config file: {e}")
 
 
+# ── Sprint 167 — Enterprise Server Operations ──────────────────────────────
+
+def _handle_enterprise_server_ops(args):
+    """Handle enterprise server migration operations.
+
+    Returns ExitCode if an enterprise operation was handled (caller should exit),
+    or None if no enterprise operation was requested (caller should continue
+    to normal download flow).
+    """
+    is_enterprise = any(getattr(args, flag, False) for flag in (
+        'server_discover', 'plan_migration', 'map_permissions',
+        'migrate_subscriptions', 'cutover', 'cutover_plan_only',
+    ))
+    if not is_enterprise:
+        return None
+
+    import tempfile
+    from tableau_export.server_client import TableauServerClient
+
+    output_dir = getattr(args, 'output_dir', None) or 'artifacts/server_migration'
+    os.makedirs(output_dir, exist_ok=True)
+
+    ts_client = TableauServerClient(
+        server_url=args.server,
+        token_name=getattr(args, 'token_name', None),
+        token_secret=getattr(args, 'token_secret', None) or os.environ.get('TABLEAU_TOKEN_SECRET'),
+        site_id=getattr(args, 'site', ''),
+    )
+    ts_client.sign_in()
+
+    try:
+        # ── Server discovery ──────────────────────────────────
+        if getattr(args, 'server_discover', False) or getattr(args, 'plan_migration', False):
+            print_header("SITE TOPOLOGY DISCOVERY")
+            from powerbi_import.dependency_graph import (
+                build_site_topology, build_dependency_graph,
+                generate_topology_report, save_topology,
+            )
+
+            topology = build_site_topology(ts_client)
+            dep_graph = build_dependency_graph(topology)
+            report = generate_topology_report(topology, dep_graph)
+
+            save_topology(topology, dep_graph, output_dir)
+            print(f"  Topology saved to {output_dir}")
+
+            report_path = os.path.join(output_dir, 'topology_report.html')
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(report)
+            print(f"  Report:  {report_path}")
+
+        # ── Migration planning ────────────────────────────────
+        if getattr(args, 'plan_migration', False):
+            print_header("MIGRATION PLANNING")
+            from powerbi_import.migration_planner import (
+                generate_migration_plan_from_topology,
+                save_migration_plan,
+            )
+
+            plan = generate_migration_plan_from_topology(
+                topology,
+                dependency_graph=dep_graph.get('datasource_dependents'),
+                workspace_strategy=getattr(args, 'workspace_mapping', 'by_project'),
+                max_per_wave=getattr(args, 'wave_max_size', 10),
+                team_size=getattr(args, 'team_size', 1),
+            )
+            json_path, html_path = save_migration_plan(plan, output_dir)
+            print(f"  Plan:    {json_path}")
+            print(f"  Dashboard: {html_path}")
+
+            summary = plan.get('summary', {})
+            print(f"\n  Summary:")
+            print(f"    Workbooks: {summary.get('total_workbooks', 0)}")
+            print(f"    Waves:     {summary.get('total_waves', 0)}")
+            print(f"    Effort:    {summary.get('total_effort_hours', 0)}h")
+            if summary.get('start_date'):
+                print(f"    Timeline:  {summary['start_date']} → {summary['end_date']}")
+                print(f"    Team size: {summary.get('team_size', 1)}")
+
+        # ── Permission mapping ────────────────────────────────
+        if getattr(args, 'map_permissions', False):
+            print_header("PERMISSION MAPPING")
+            from powerbi_import.permission_mapper import (
+                map_site_roles, generate_azure_ad_scripts,
+                generate_permission_report,
+            )
+
+            users = ts_client.list_users_with_groups()
+            groups = ts_client.list_groups() or []
+            print(f"  Users:  {len(users)}")
+            print(f"  Groups: {len(groups)}")
+
+            role_assignments = map_site_roles(users)
+
+            ad_script_path = os.path.join(output_dir, 'provision_azure_ad_groups.ps1')
+            generate_azure_ad_scripts(groups, ad_script_path)
+            print(f"  Azure AD script: {ad_script_path}")
+
+            report_path = os.path.join(output_dir, 'permission_report.html')
+            generate_permission_report(role_assignments, output_path=report_path)
+            print(f"  Report: {report_path}")
+
+        # ── Subscription & alert migration ────────────────────
+        if getattr(args, 'migrate_subscriptions', False):
+            print_header("SUBSCRIPTION MIGRATION")
+            from powerbi_import.subscription_generator import (
+                extract_all_subscriptions, extract_data_alerts,
+                generate_pbi_subscriptions, generate_power_automate_flows,
+                generate_subscription_report, save_subscriptions,
+            )
+
+            subscriptions = extract_all_subscriptions(ts_client)
+            alerts = extract_data_alerts(ts_client)
+            print(f"  Subscriptions: {len(subscriptions)}")
+            print(f"  Data alerts:   {len(alerts)}")
+
+            pbi_subs = generate_pbi_subscriptions(subscriptions)
+            flows = generate_power_automate_flows(subscriptions, alerts)
+
+            save_subscriptions(pbi_subs, flows, output_dir)
+            report = generate_subscription_report(subscriptions, alerts, pbi_subs, flows)
+            report_path = os.path.join(output_dir, 'subscription_report.html')
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(report)
+            print(f"  Report: {report_path}")
+
+        # ── Cutover ───────────────────────────────────────────
+        if getattr(args, 'cutover', False) or getattr(args, 'cutover_plan_only', False):
+            print_header("CUTOVER MANAGEMENT")
+            from powerbi_import.cutover_manager import (
+                generate_cutover_plan, execute_cutover,
+                generate_cutover_dashboard, save_cutover_plan,
+            )
+
+            plan_only = getattr(args, 'cutover_plan_only', False)
+            cutover_plan = generate_cutover_plan(
+                migration_plan={},
+                waves_to_cut=None,
+                plan_only=plan_only,
+            )
+            plan_path = save_cutover_plan(cutover_plan, output_dir)
+            print(f"  Cutover plan: {plan_path}")
+
+            if not plan_only:
+                result = execute_cutover(
+                    cutover_plan,
+                    artifacts_dir=output_dir,
+                    snapshot_dir=os.path.join(output_dir, 'snapshots'),
+                )
+                dashboard = generate_cutover_dashboard(cutover_plan, result)
+                dash_path = os.path.join(output_dir, 'cutover_dashboard.html')
+                with open(dash_path, 'w', encoding='utf-8') as f:
+                    f.write(dashboard)
+                print(f"  Dashboard: {dash_path}")
+
+    finally:
+        ts_client.sign_out()
+
+    return ExitCode.SUCCESS
+
+
 # ── Tableau Server download ─────────────────────────────────────────────────
 
 def _download_from_server(args):
@@ -2636,16 +3015,124 @@ def _download_from_server(args):
         )
 
         if getattr(args, 'server_batch', None):
-            # Batch: download all workbooks from a project
-            print(f"  Project: {args.server_batch}")
-            dl_results = ts_client.download_all_workbooks(
-                download_dir, project_name=args.server_batch,
-            )
+            # Batch: download assets from a project
+            project_filter = args.server_batch
+            print(f"  Project: {project_filter}")
+
+            # Determine which asset types to download
+            raw_assets = getattr(args, 'server_assets', None) or ['workbooks', 'flows']
+            if 'all' in raw_assets:
+                asset_types = {'workbooks', 'flows', 'datasources'}
+            else:
+                asset_types = set(raw_assets)
+            print(f"  Assets:  {', '.join(sorted(asset_types))}")
+
+            preserve_folders = getattr(args, 'server_preserve_folders', False)
+            if preserve_folders:
+                print(f"  Folders: preserving project structure")
+
+            import re as _re_srv
+            total_downloaded = 0
+
+            # ── Download workbooks ──
+            if 'workbooks' in asset_types:
+                dl_results = ts_client.download_all_workbooks(
+                    download_dir, project_name=project_filter,
+                )
+                # Re-organize by project folder if preserve_folders
+                if preserve_folders:
+                    workbooks_meta = ts_client.list_workbooks(project_name=project_filter)
+                    project_map = {
+                        wb.get('name', ''): wb.get('project', {}).get('name', '')
+                        for wb in workbooks_meta
+                    }
+                    for r in dl_results:
+                        if r['status'] == 'success' and os.path.isfile(r['path']):
+                            proj_name = project_map.get(r['name'], '')
+                            if proj_name:
+                                safe_proj = _re_srv.sub(r'[^\w\-. ]', '_', proj_name)
+                                dest_dir = os.path.join(download_dir, safe_proj)
+                                os.makedirs(dest_dir, exist_ok=True)
+                                dest = os.path.join(dest_dir, os.path.basename(r['path']))
+                                if r['path'] != dest:
+                                    os.replace(r['path'], dest)
+                                    r['path'] = dest
+
+                succeeded_wb = [r for r in dl_results if r['status'] == 'success']
+                print(f"  Workbooks: {len(succeeded_wb)}/{len(dl_results)} downloaded")
+                total_downloaded += len(succeeded_wb)
+
+            # ── Download prep flows ──
+            if 'flows' in asset_types:
+                try:
+                    flows = ts_client.list_prep_flows()
+                    # Filter by project if specified (not 'all')
+                    if project_filter.lower() != 'all':
+                        flows = [
+                            fl for fl in flows
+                            if fl.get('project', {}).get('name', '') == project_filter
+                        ]
+                    flow_count = 0
+                    for fl in flows:
+                        fl_name = fl.get('name', 'flow')
+                        safe = _re_srv.sub(r'[^\w\-.]', '_', fl_name)
+
+                        if preserve_folders:
+                            proj_name = fl.get('project', {}).get('name', '')
+                            safe_proj = _re_srv.sub(r'[^\w\-. ]', '_', proj_name) if proj_name else ''
+                            fl_dir = os.path.join(download_dir, safe_proj) if safe_proj else download_dir
+                        else:
+                            fl_dir = download_dir
+
+                        os.makedirs(fl_dir, exist_ok=True)
+                        fl_path = os.path.join(fl_dir, f'{safe}.tflx')
+                        try:
+                            ts_client.download_prep_flow(fl['id'], fl_path)
+                            flow_count += 1
+                        except Exception as fe:
+                            logger.warning(f"Failed to download flow {fl_name}: {fe}")
+                    print(f"  Flows: {flow_count}/{len(flows)} downloaded")
+                    total_downloaded += flow_count
+                except Exception as fe:
+                    logger.warning(f"Could not list prep flows: {fe}")
+
+            # ── Download published datasources ──
+            if 'datasources' in asset_types:
+                try:
+                    datasources = ts_client.list_datasources()
+                    # Filter by project if specified
+                    if project_filter.lower() != 'all':
+                        datasources = [
+                            ds for ds in datasources
+                            if ds.get('project', {}).get('name', '') == project_filter
+                        ]
+                    ds_count = 0
+                    for ds in datasources:
+                        ds_name = ds.get('name', 'datasource')
+                        safe = _re_srv.sub(r'[^\w\-.]', '_', ds_name)
+
+                        if preserve_folders:
+                            proj_name = ds.get('project', {}).get('name', '')
+                            safe_proj = _re_srv.sub(r'[^\w\-. ]', '_', proj_name) if proj_name else ''
+                            ds_dir = os.path.join(download_dir, safe_proj) if safe_proj else download_dir
+                        else:
+                            ds_dir = download_dir
+
+                        os.makedirs(ds_dir, exist_ok=True)
+                        ds_path = os.path.join(ds_dir, f'{safe}.tdsx')
+                        try:
+                            ts_client.download_datasource(ds['id'], ds_path)
+                            ds_count += 1
+                        except Exception as fe:
+                            logger.warning(f"Failed to download datasource {ds_name}: {fe}")
+                    print(f"  Datasources: {ds_count}/{len(datasources)} downloaded")
+                    total_downloaded += ds_count
+                except Exception as fe:
+                    logger.warning(f"Could not list datasources: {fe}")
+
             ts_client.sign_out()
-            succeeded = [r for r in dl_results if r['status'] == 'success']
-            print(f"  Downloaded: {len(succeeded)}/{len(dl_results)} workbooks")
-            if not succeeded:
-                print("  No workbooks downloaded — aborting")
+            if total_downloaded == 0:
+                print("  No assets downloaded — aborting")
                 return ExitCode.EXTRACTION_FAILED
             # Switch to batch mode
             args.batch = download_dir
@@ -3548,9 +4035,31 @@ def main():
 
     # ── Tableau Server download ───────────────────────────────
     if getattr(args, 'server', None):
+        # ── Sprint 167 — Enterprise server operations ─────────
+        enterprise_result = _handle_enterprise_server_ops(args)
+        if enterprise_result is not None:
+            return enterprise_result
+
         server_result = _download_from_server(args)
         if server_result is not None:
             return server_result
+
+    # ── Clear datasource cache mode ──────────────────────────
+    if getattr(args, 'clear_cache', False):
+        cache_dir = getattr(args, 'ds_cache_dir', None) or os.path.join(
+            tempfile.gettempdir(), 'tableau_ds_cache')
+        from tableau_export.datasource_extractor import clear_ds_cache
+        count = clear_ds_cache(cache_dir)
+        print(f"Cleared {count} cached datasource(s) from {cache_dir}")
+        return ExitCode.SUCCESS
+
+    # ── Rollback mode ─────────────────────────────────────────
+    if getattr(args, 'cutover_rollback', None):
+        from powerbi_import.cutover_manager import rollback
+        print_header("ROLLBACK")
+        target_dir = getattr(args, 'output_dir', None) or 'artifacts'
+        ok = rollback(args.cutover_rollback, target_dir)
+        return ExitCode.SUCCESS if ok else ExitCode.GENERAL_ERROR
 
     # ── PBIR schema version check mode ────────────────────────
     if getattr(args, 'check_schema', False):
@@ -3678,6 +4187,7 @@ def main():
             resume=getattr(args, 'resume', False),
             jsonl_log=getattr(args, 'jsonl_log', None),
             manifest=manifest_data,
+            full_lineage=getattr(args, 'full_lineage', False),
         )
 
     # ── Single file migration ─────────────────────────────────

@@ -614,7 +614,7 @@ class TableauServerClient:
             dict: Datasource metadata (name, type, connections, tables, owner).
         """
         url = f'{self.site_url}/datasources/{datasource_id}'
-        resp = self._request(url)
+        resp = self._request('GET', url)
         return resp.get('datasource', {})
 
     def get_usage_stats(self, workbook_id, days=30):
@@ -796,6 +796,129 @@ class TableauServerClient:
         except Exception as e:
             logger.error(f'Metadata GraphQL query failed: {e}')
             return {}
+
+    # ═══════════════════════════════════════════════════════════════
+    # Sprint 167 — Enterprise Server Migration Methods
+    # ═══════════════════════════════════════════════════════════════
+
+    def list_users_with_groups(self):
+        """List all users enriched with their group memberships.
+
+        Returns:
+            list[dict]: User dicts with 'groups' key added.
+        """
+        users = self.list_users() or []
+        groups = self.list_groups() or []
+
+        user_groups = {}
+        for group in groups:
+            gid = group.get('id', '')
+            gname = group.get('name', '')
+            try:
+                url = f'{self.site_url}/groups/{gid}/users'
+                members = self._paginated_get(url, 'users', 'user')
+                for member in members:
+                    uid = member.get('id', '')
+                    user_groups.setdefault(uid, []).append(gname)
+            except Exception as e:
+                logger.warning("Could not list members of group %s: %s", gname, e)
+
+        for user in users:
+            user['groups'] = user_groups.get(user.get('id', ''), [])
+
+        return users
+
+    def build_permission_matrix(self):
+        """Build a site-wide permission matrix: user × workbook → capabilities.
+
+        Returns:
+            dict: {workbooks: [{id, name, permissions: [{user, caps}]}]}
+        """
+        workbooks = self.list_workbooks() or []
+        matrix = []
+
+        for wb in workbooks:
+            wb_id = wb.get('id', '')
+            wb_name = wb.get('name', '')
+            try:
+                perms = self.get_permissions(wb_id)
+            except Exception:
+                perms = []
+            matrix.append({
+                'id': wb_id,
+                'name': wb_name,
+                'project': wb.get('project', {}).get('name', ''),
+                'permissions': perms,
+            })
+
+        return {'workbooks': matrix}
+
+    def get_all_subscriptions(self):
+        """Get all subscriptions site-wide (paginated).
+
+        Returns:
+            list[dict]: All subscription metadata.
+        """
+        url = f'{self.site_url}/subscriptions'
+        return self._paginated_get(url, 'subscriptions', 'subscription')
+
+    def list_data_alerts(self):
+        """List all data-driven alerts on the site (Server 2018.3+).
+
+        Returns:
+            list[dict]: Alert metadata, or empty list if unsupported.
+        """
+        url = f'{self.site_url}/dataAlerts'
+        try:
+            resp = self._request('GET', url)
+            alerts = resp.get('dataAlerts', {}).get('dataAlert', [])
+            if isinstance(alerts, dict):
+                alerts = [alerts]
+            return alerts
+        except Exception as e:
+            logger.warning("Data alerts API not available: %s", e)
+            return []
+
+    def download_datasource_by_name(self, name, output_path):
+        """Download a published datasource by name.
+
+        Args:
+            name: Datasource name (case-insensitive match).
+            output_path: Local file path.
+
+        Returns:
+            str or None: Path to downloaded file, or None if not found.
+        """
+        datasources = self.list_datasources() or []
+        match = None
+        for ds in datasources:
+            if ds.get('name', '').lower() == name.lower():
+                match = ds
+                break
+
+        if not match:
+            logger.warning("Published datasource '%s' not found", name)
+            return None
+
+        return self.download_datasource(match['id'], output_path)
+
+    def get_site_topology(self):
+        """Get comprehensive site topology for migration planning.
+
+        Returns:
+            dict: {site_info, projects, workbooks, datasources, users, groups,
+                   schedules, prep_flows}
+        """
+        return {
+            'site_info': self.get_site_info(),
+            'projects': self.list_projects() or [],
+            'workbooks': self.list_workbooks() or [],
+            'datasources': self.list_datasources() or [],
+            'users': self.list_users() or [],
+            'groups': self.list_groups() or [],
+            'schedules': self.list_schedules() or [],
+            'prep_flows': self.list_prep_flows() or [],
+        }
 
     def get_lineage_upstream(self, workbook_id):
         """Get upstream lineage for a workbook using Metadata API.

@@ -154,5 +154,64 @@ class TestGeneratePlanHtml(unittest.TestCase):
         self.assertIn('WB1', html)
 
 
+# ── Sprint 167 — Timeline & Topology Integration Tests ─────────────
+
+class TestGenerateTimeline(unittest.TestCase):
+
+    def test_generates_dates(self):
+        from powerbi_import.migration_planner import generate_timeline
+        waves = [
+            {'wave': 1, 'effort_hours': 10, 'workbooks': []},
+            {'wave': 2, 'effort_hours': 20, 'workbooks': []},
+        ]
+        timeline = generate_timeline(waves, team_size=2, start_date='2025-03-01')
+        self.assertEqual(len(timeline), 2)
+        self.assertEqual(timeline[0]['start_date'], '2025-03-01')
+        self.assertGreater(timeline[1]['start_date'], timeline[0]['end_date'])
+
+    def test_single_engineer(self):
+        from powerbi_import.migration_planner import generate_timeline
+        waves = [{'wave': 1, 'effort_hours': 6, 'workbooks': []}]
+        timeline = generate_timeline(waves, team_size=1, hours_per_day=6)
+        self.assertEqual(timeline[0]['duration_days'], 1)
+
+    def test_empty_waves(self):
+        from powerbi_import.migration_planner import generate_timeline
+        timeline = generate_timeline([], team_size=1)
+        self.assertEqual(timeline, [])
+
+
+class TestGenerateMigrationPlanFromTopology(unittest.TestCase):
+
+    def test_from_topology(self):
+        from powerbi_import.migration_planner import generate_migration_plan_from_topology
+        topology = {
+            'workbooks': [
+                {'id': 'wb1', 'name': 'WB1', 'project': {'name': 'Sales'},
+                 'sheetCount': 5, 'datasource_ids': []},
+            ],
+            'users': [{'name': 'alice', 'siteRole': 'Creator', 'email': 'a@co.com'}],
+            'groups': [],
+            'datasources': [],
+        }
+        plan = generate_migration_plan_from_topology(topology, team_size=2)
+        self.assertIn('timeline', plan)
+        self.assertIn('summary', plan)
+
+    def test_with_string_project(self):
+        from powerbi_import.migration_planner import generate_migration_plan_from_topology
+        topology = {
+            'workbooks': [
+                {'id': 'wb1', 'name': 'WB1', 'project': 'Sales',
+                 'sheetCount': 3, 'datasource_ids': []},
+            ],
+            'users': [],
+            'groups': [],
+            'datasources': [],
+        }
+        plan = generate_migration_plan_from_topology(topology)
+        self.assertEqual(plan['summary']['total_workbooks'], 1)
+
+
 if __name__ == '__main__':
     unittest.main()

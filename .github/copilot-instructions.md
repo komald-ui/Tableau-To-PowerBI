@@ -129,6 +129,8 @@ python migrate.py path/to/workbook.twbx --assess
 python migrate.py path/to/workbook.twbx --deploy WORKSPACE_ID --deploy-refresh
 python migrate.py --server https://tableau.company.com --workbook "Sales Dashboard" --token-name my-pat --token-secret secret
 python migrate.py --server https://tableau.company.com --server-batch Marketing --output-dir /tmp/batch
+python migrate.py --server https://tableau.company.com --server-batch Marketing --server-assets all --server-preserve-folders --token-name pat --token-secret secret
+python migrate.py --server https://tableau.company.com --server-batch Sales --server-assets workbooks datasources --token-name pat --token-secret secret
 python migrate.py path/to/workbook.twbx --languages fr-FR,de-DE,ja-JP
 python migrate.py path/to/workbook.twbx --goals
 python migrate.py path/to/workbook.twbx --check-schema

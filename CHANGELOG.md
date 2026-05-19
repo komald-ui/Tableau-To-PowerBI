@@ -1,5 +1,64 @@
 # Changelog
 
+## v36.0.0 — Sprints 139–145 — Stream H: Tableau Server Enterprise Migration
+
+### Sprint 139 — Site Topology Discovery
+- **dependency_graph.py** (NEW): Site-wide topology discovery and dependency graph
+  - `build_site_topology(client)` — comprehensive site inventory (workbooks, datasources, users, groups)
+  - `build_dependency_graph(topology)` — workbook↔datasource dependency mapping with topological sort
+  - `classify_usage()` — active/stale/orphan classification by view count and last-accessed date
+  - `audit_certifications()` — certified vs uncertified datasource audit
+  - `enrich_with_lineage()` — upstream/downstream lineage enrichment
+  - `generate_topology_report()` — HTML dashboard using html_template.py
+  - `save_topology()` / `load_topology()` — JSON persistence
+
+### Sprint 140 — Migration Planning Engine Extensions
+- **migration_planner.py**: Topology-aware planning with timeline generation
+  - `generate_timeline(waves, team_size, start_date, hours_per_day, buffer_days)` — dated wave timeline with effort-based duration
+  - `generate_migration_plan_from_topology(topology, dependency_graph, ...)` — bridges site discovery to planning engine
+  - 15 new CLI flags: `--server-discover`, `--plan-migration`, `--team-size`, `--wave-max-size`, `--workspace-mapping`, `--map-permissions`, `--migrate-subscriptions`, `--resolve-published-ds`, `--ds-cache-dir`, `--no-ds-cache`, `--clear-cache`, `--cutover`, `--cutover-plan-only`, `--cutover-rollback`, `--parallel-run`
+
+### Sprint 141 — Permission & Security Mapping
+- **permission_mapper.py**: Enterprise permission migration
+  - `map_site_roles(users, workspace_mapping)` — Tableau site roles → PBI workspace roles (Creator→Admin, Explorer→Member, Viewer→Viewer)
+  - `reconcile_rls_principals(roles, users, groups)` — match Tableau RLS members to Azure AD UPNs
+  - `generate_azure_ad_scripts(groups, output_path)` — PowerShell scripts for Azure AD security group creation
+  - `generate_permission_report(...)` — HTML permission audit dashboard
+
+### Sprint 142 — Subscription & Alert Migration
+- **subscription_generator.py** (NEW): Subscription lifecycle migration
+  - `extract_all_subscriptions(client, topology)` — site-wide subscription extraction
+  - `extract_data_alerts(client)` — Tableau Server data-driven alert extraction
+  - `generate_pbi_subscriptions(subscriptions)` — Tableau → PBI subscription conversion
+  - `generate_power_automate_flows(subscriptions, alerts)` — Power Automate flow templates for complex alerts
+  - `detect_schedule_conflicts(pbi_subscriptions, license_type)` — Pro/PPU refresh limit validation
+  - `generate_subscription_report(...)` — HTML subscription migration report
+- **alerts_generator.py**: `map_server_alerts()` — Tableau Server data-driven alerts → PBI alert rules
+
+### Sprint 143 — Published Datasource Resolution
+- **datasource_extractor.py**: Cached published datasource resolution
+  - `cache_published_datasource(datasource, cache_dir)` — persist resolved datasource to local cache
+  - `load_cached_datasource(ds_name, cache_dir)` — cache-first lookup
+  - `clear_ds_cache(cache_dir)` — purge cache directory
+  - `resolve_published_datasource_cached(datasource, server_client, cache_dir, no_cache)` — cache-aware resolution with server fallback
+  - `resolve_all_published(datasources, server_client, cache_dir)` — bulk resolution with per-datasource status tracking
+- **server_client.py**: 6 new enterprise methods
+  - `list_users_with_groups()`, `build_permission_matrix()`, `get_all_subscriptions()`, `list_data_alerts()`, `download_datasource_by_name()`, `get_site_topology()`
+
+### Sprint 144 — Cutover Orchestration & Rollback
+- **cutover_manager.py** (NEW): Migration cutover lifecycle
+  - `generate_cutover_plan(migration_plan, waves_to_cut, cutover_date)` — cutover plan with wave selection and scheduling
+  - `execute_cutover(cutover_plan, artifacts_dir, snapshot_dir, dry_run)` — cutover execution with pre-flight snapshot
+  - `rollback(snapshot_path, target_dir)` — snapshot-based rollback
+  - `list_snapshots(artifacts_dir)` — available rollback snapshots
+  - `parallel_run_check(tableau_data, pbi_data, tolerance)` — numeric value reconciliation
+  - `generate_cutover_dashboard(...)` — HTML cutover status dashboard
+
+### Sprint 145 — Documentation & Testing
+- **docs/SERVER_MIGRATION_GUIDE.md** (NEW): End-to-end enterprise migration guide (6 phases)
+- **migrate.py**: `_handle_enterprise_server_ops(args)` dispatcher for all new CLI flags
+- 6 test files: test_site_discovery, test_migration_planner (extended), test_permission_mapping, test_subscription_migration, test_published_ds_resolution, test_cutover_manager, test_server_e2e
+
 ## v35.0.0 — Sprints 171–174 — Stream G: Advanced Visual Fidelity
 
 ### Sprint 171 — Sparkline Variants

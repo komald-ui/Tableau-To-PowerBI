@@ -335,3 +335,64 @@ def save_alert_rules(rules: List[Dict], output_dir: str) -> str:
 
     logger.info("Saved %d alert rule(s) to %s", len(rules), filepath)
     return filepath
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Sprint 167 — Server Data Alert Mapping
+# ═══════════════════════════════════════════════════════════════════════
+
+_SERVER_CONDITION_MAP = {
+    'above': 'greaterThan',
+    'below': 'lessThan',
+    'above-or-equal': 'greaterThanOrEqual',
+    'below-or-equal': 'lessThanOrEqual',
+}
+
+_SERVER_FREQUENCY_MAP = {
+    'once': 'atMostOncePerDay',
+    'always': 'atMostOncePerHour',
+    'asFrequentlyAsPossible': 'atMostOncePerHour',
+}
+
+
+def map_server_alerts(server_alerts: list, workbook_map: dict = None) -> list:
+    """Convert Tableau Server data-driven alerts to PBI alert rules.
+
+    Args:
+        server_alerts: Alert dicts from server_client.list_data_alerts().
+        workbook_map: Optional {tableau_wb_id: pbi_report_name}.
+
+    Returns:
+        list: PBI alert rule dicts.
+    """
+    workbook_map = workbook_map or {}
+    rules = []
+
+    for alert in server_alerts:
+        condition = alert.get('condition', '')
+        operator = _SERVER_CONDITION_MAP.get(condition, 'greaterThan')
+        frequency = _SERVER_FREQUENCY_MAP.get(
+            alert.get('frequency', 'once'), 'atMostOncePerDay')
+
+        threshold = alert.get('threshold', 0)
+        try:
+            threshold = float(threshold)
+        except (ValueError, TypeError):
+            threshold = 0
+
+        wb_id = alert.get('workbook_id', '')
+        report_name = workbook_map.get(wb_id, alert.get('view_name', 'Unknown'))
+
+        rules.append({
+            'name': alert.get('subject', f'Alert from {report_name}'),
+            'measure': alert.get('view_name', 'Unknown'),
+            'operator': operator,
+            'threshold': threshold,
+            'frequency': frequency,
+            'source': f'server_alert:{alert.get("id", "")}',
+            'recipients': alert.get('recipients', []),
+            'report': report_name,
+        })
+
+    logger.info("Mapped %d server data alerts to PBI rules", len(rules))
+    return rules

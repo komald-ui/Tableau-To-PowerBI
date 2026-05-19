@@ -512,6 +512,205 @@ def _parse_published_datasource_file(file_path):
         return None
 
 
+# ═══════════════════════════════════════════════════════════════════════
+#  Sprint 167 — Published Datasource Caching & Bulk Resolution
+# ═══════════════════════════════════════════════════════════════════════
+
+import json as _json
+import hashlib as _hashlib
+
+
+def _ds_cache_key(ds_name):
+    """Produce a filesystem-safe cache key for a datasource name."""
+    safe = re.sub(r'[^a-zA-Z0-9_-]', '_', ds_name)
+    digest = _hashlib.sha256(ds_name.encode()).hexdigest()[:12]
+    return f"{safe}_{digest}"
+
+
+def cache_published_datasource(datasource, cache_dir):
+    """Cache a resolved published datasource as JSON.
+
+    Args:
+        datasource: Resolved datasource dict.
+        cache_dir: Directory for the cache.
+
+    Returns:
+        str: Path to the cached file.
+    """
+    ds_name = datasource.get('name', 'unknown')
+    key = _ds_cache_key(ds_name)
+    os.makedirs(cache_dir, exist_ok=True)
+    path = os.path.join(cache_dir, f'{key}.json')
+
+    cache_entry = {
+        'name': ds_name,
+        'connection': datasource.get('connection'),
+        'tables': datasource.get('tables', []),
+        'columns': datasource.get('columns', []),
+        'relationships': datasource.get('relationships', []),
+        'connection_map': datasource.get('connection_map'),
+    }
+
+    with open(path, 'w', encoding='utf-8') as f:
+        _json.dump(cache_entry, f, indent=2, ensure_ascii=False, default=str)
+
+    logger.debug("Cached published datasource %r → %s", ds_name, path)
+    return path
+
+
+def load_cached_datasource(ds_name, cache_dir):
+    """Load a published datasource from the cache.
+
+    Args:
+        ds_name: Datasource name.
+        cache_dir: Directory for the cache.
+
+    Returns:
+        dict or None: Cached datasource dict, or None if not found.
+    """
+    key = _ds_cache_key(ds_name)
+    path = os.path.join(cache_dir, f'{key}.json')
+    if not os.path.exists(path):
+        return None
+
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return _json.load(f)
+    except (OSError, _json.JSONDecodeError) as e:
+        logger.warning("Failed to load cached datasource %r: %s", ds_name, e)
+        return None
+
+
+def clear_ds_cache(cache_dir):
+    """Clear the published datasource cache.
+
+    Args:
+        cache_dir: Cache directory to clear.
+
+    Returns:
+        int: Number of files removed.
+    """
+    if not os.path.isdir(cache_dir):
+        return 0
+
+    count = 0
+    for fname in os.listdir(cache_dir):
+        if fname.endswith('.json'):
+            try:
+                os.remove(os.path.join(cache_dir, fname))
+                count += 1
+            except OSError:
+                pass
+    logger.info("Cleared %d cached datasource(s) from %s", count, cache_dir)
+    return count
+
+
+def resolve_published_datasource_cached(datasource, server_client=None,
+                                         cache_dir=None, no_cache=False):
+    """Resolve a published datasource with optional caching.
+
+    Checks the cache first. If not cached, resolves via server
+    and caches the result. Falls back to cache if server is unavailable.
+
+    Args:
+        datasource: Datasource dict from extract_datasource().
+        server_client: Optional TableauServerClient.
+        cache_dir: Cache directory path. None disables caching.
+        no_cache: If True, skip cache reads (still writes).
+
+    Returns:
+        The datasource dict (mutated in place).
+    """
+    conn = datasource.get('connection', {})
+    if conn.get('type') != 'Tableau Server':
+        return datasource
+
+    ds_name = conn.get('details', {}).get('server_ds_name', '')
+    if not ds_name:
+        datasource['_published_unresolved'] = True
+        return datasource
+
+    # Try cache first (unless no_cache)
+    if cache_dir and not no_cache:
+        cached = load_cached_datasource(ds_name, cache_dir)
+        if cached:
+            for key in ('connection', 'tables', 'columns', 'relationships', 'connection_map'):
+                if key in cached and cached[key]:
+                    datasource[key] = cached[key]
+            datasource['_published_resolved'] = True
+            datasource['_published_source'] = 'cache'
+            logger.info("Resolved published datasource %r from cache", ds_name)
+            return datasource
+
+    # Try server
+    if server_client:
+        resolve_published_datasource(datasource, server_client)
+
+        # Cache on success
+        if datasource.get('_published_resolved') and cache_dir:
+            cache_published_datasource(datasource, cache_dir)
+            datasource['_published_source'] = 'server'
+            return datasource
+
+    # Offline fallback — try cache even if no_cache was set
+    if cache_dir:
+        cached = load_cached_datasource(ds_name, cache_dir)
+        if cached:
+            for key in ('connection', 'tables', 'columns', 'relationships', 'connection_map'):
+                if key in cached and cached[key]:
+                    datasource[key] = cached[key]
+            datasource['_published_resolved'] = True
+            datasource['_published_source'] = 'cache_fallback'
+            logger.warning("Resolved %r from stale cache (server unavailable)", ds_name)
+            return datasource
+
+    datasource['_published_unresolved'] = True
+    return datasource
+
+
+def resolve_all_published(datasources, server_client=None,
+                           cache_dir=None, no_cache=False):
+    """Bulk-resolve all published datasources in a list.
+
+    Args:
+        datasources: List of datasource dicts.
+        server_client: Optional TableauServerClient.
+        cache_dir: Cache directory.
+        no_cache: Skip cache reads.
+
+    Returns:
+        dict: {resolved: [names], unresolved: [names], cached: [names]}
+    """
+    resolved, unresolved, cached = [], [], []
+
+    for ds in datasources:
+        conn = ds.get('connection', {})
+        if conn.get('type') != 'Tableau Server':
+            continue
+
+        ds_name = conn.get('details', {}).get('server_ds_name', ds.get('name', ''))
+        resolve_published_datasource_cached(
+            ds, server_client=server_client,
+            cache_dir=cache_dir, no_cache=no_cache)
+
+        if ds.get('_published_resolved'):
+            source = ds.get('_published_source', 'server')
+            if source in ('cache', 'cache_fallback'):
+                cached.append(ds_name)
+            else:
+                resolved.append(ds_name)
+        else:
+            unresolved.append(ds_name)
+
+    logger.info("Published DS resolution: %d resolved, %d cached, %d unresolved",
+                len(resolved), len(cached), len(unresolved))
+    return {
+        'resolved': resolved,
+        'unresolved': unresolved,
+        'cached': cached,
+    }
+
+
 def _parse_connection_class(inner_conn, named_conn=None, twbx_path=None):
     """Parses a single Tableau <connection> element into {type, details}.
     
