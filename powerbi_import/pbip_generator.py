@@ -178,7 +178,9 @@ class PowerBIProjectGenerator:
     def generate_project(self, report_name, converted_objects, calendar_start=None,
                          calendar_end=None, culture=None, model_mode='import',
                          output_format='pbip', paginated=False, languages=None,
-                         composite_threshold=None, agg_tables='none'):
+                         composite_threshold=None, agg_tables='none',
+                         incremental_refresh=False, incremental_refresh_months=12,
+                         parameterize=True):
         """
         Generates a complete Power BI Project
         
@@ -206,6 +208,9 @@ class PowerBIProjectGenerator:
         self._languages = languages
         self._composite_threshold = composite_threshold
         self._agg_tables = agg_tables
+        self._incremental_refresh = incremental_refresh
+        self._incremental_refresh_months = incremental_refresh_months
+        self._parameterize = parameterize
         
         # Detect datasource-only mode (.tds â€” no worksheets/dashboards)
         self._datasource_only = not bool(
@@ -363,6 +368,9 @@ class PowerBIProjectGenerator:
                 languages=getattr(self, '_languages', None),
                 composite_threshold=getattr(self, '_composite_threshold', None),
                 agg_tables=getattr(self, '_agg_tables', 'none'),
+                incremental_refresh=getattr(self, '_incremental_refresh', False),
+                incremental_refresh_months=getattr(self, '_incremental_refresh_months', 12),
+                parameterize=getattr(self, '_parameterize', True),
             )
             
             print(f"  \u2713 TMDL model created with:")
@@ -374,6 +382,9 @@ class PowerBIProjectGenerator:
                 print(f"    - {stats['hierarchies']} hierarchies")
             if stats['roles']:
                 print(f"    - {stats['roles']} RLS roles")
+            if stats.get('incremental_refresh'):
+                ir = stats['incremental_refresh']
+                print(f"    - {len(ir.get('tables_configured', []))} incremental refresh table(s)")
 
             # Store actual BIM measure names for report visual generation.
             # This set reflects the TMDL generator's 3-factor classification
@@ -1021,6 +1032,93 @@ class PowerBIProjectGenerator:
         }
         _write_json(os.path.join(visual_dir, 'visual.json'), visual_json, ensure_ascii=False)
 
+    def _create_annotation_overlay(self, visuals_dir, annotation, parent_obj,
+                                    scale_x, scale_y, visual_count):
+        """Create a textbox overlay visual from a Tableau annotation.
+
+        Positions the textbox relative to the parent chart visual using the
+        annotation's position data.  Annotation formatting (font size, color,
+        bold/italic) is converted to PBI textStyle properties.
+
+        Args:
+            visuals_dir: Directory for visual containers.
+            annotation: Annotation dict from extraction (text, position, formatting).
+            parent_obj: Parent dashboard object (for base position reference).
+            scale_x: Horizontal scale factor.
+            scale_y: Vertical scale factor.
+            visual_count: Z-index / tab order value.
+        """
+        visual_id = uuid.uuid4().hex[:20]
+        visual_dir = os.path.join(visuals_dir, visual_id)
+
+        text = annotation.get('text', '')
+        if not text:
+            return
+
+        # Build position: offset within the parent chart area
+        parent_pos = parent_obj.get('position', {})
+        ann_pos = annotation.get('position', {})
+        try:
+            px = float(parent_pos.get('x', 0))
+            py = float(parent_pos.get('y', 0))
+            ax = float(ann_pos.get('x', 0))
+            ay = float(ann_pos.get('y', 0))
+        except (ValueError, TypeError):
+            px, py, ax, ay = 0, 0, 0, 0
+
+        overlay_pos = {
+            'x': px + ax,
+            'y': py + ay,
+            'w': float(ann_pos.get('w', 150)),
+            'h': float(ann_pos.get('h', 40)),
+        }
+
+        position = self._make_visual_position(overlay_pos, scale_x, scale_y, visual_count)
+
+        # Build textRun with formatting
+        text_run = {"value": text}
+        fmt = annotation.get('formatting', {})
+        style = {}
+        if fmt.get('font_size'):
+            try:
+                style['fontSize'] = f"{float(fmt['font_size'])}pt"
+            except (ValueError, TypeError):
+                pass
+        if fmt.get('font_color'):
+            color = fmt['font_color']
+            if color.startswith('#') and len(color) == 9:
+                color = '#' + color[3:]  # #AARRGGBB → #RRGGBB
+            style['color'] = color
+        if fmt.get('bold'):
+            style['fontWeight'] = 'bold'
+        if fmt.get('italic'):
+            style['fontStyle'] = 'italic'
+        if style:
+            text_run['textStyle'] = style
+
+        paragraphs = [{"textRuns": [text_run]}]
+
+        visual_json = {
+            "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
+            "name": visual_id,
+            "position": position,
+            "visual": {
+                "visualType": "textbox",
+                "objects": {
+                    "general": [{
+                        "properties": {
+                            "paragraphs": paragraphs
+                        }
+                    }]
+                }
+            },
+            "annotations": [{
+                "name": "MigrationNote",
+                "value": "Converted from Tableau annotation"
+            }]
+        }
+        _write_json(os.path.join(visual_dir, 'visual.json'), visual_json, ensure_ascii=False)
+
     def _create_visual_image(self, visuals_dir, obj, scale_x, scale_y, visual_count):
         """Create an image visual from a Tableau image object."""
         visual_id = uuid.uuid4().hex[:20]
@@ -1244,6 +1342,276 @@ class PowerBIProjectGenerator:
         
         return created
 
+    # ── Sprint 122: Set Actions & Interactive Parity ────────────────
+
+    def _generate_set_action_artifacts(self, visuals_dir, actions, visual_count,
+                                       page_display_name, converted_objects):
+        """Generate hidden slicers + bookmarks + action buttons for set-value actions.
+
+        For each set-value action:
+        1. Creates a hidden slicer bound to the set's source field.
+        2. Creates two bookmarks (set-active / set-clear) that toggle
+           the slicer's filter state.
+        3. Creates an action button that triggers the set-active bookmark.
+
+        Returns ``(created_count, bookmarks_list)`` where *bookmarks_list*
+        contains the bookmark dicts ready for ``_write_bookmark_files``.
+        """
+        created = 0
+        bookmarks = []
+        set_actions = [a for a in actions if a.get('type') == 'set-value']
+        for action in set_actions:
+            set_name = action.get('set_name') or action.get('target_set', '')
+            source_field = action.get('source_field') or action.get('target_field', '')
+            action_name = action.get('name', set_name or 'Set Action')
+            if not source_field:
+                continue
+
+            # Resolve table for the source field
+            table_name = self._field_map.get(source_field, {}).get('table', self._main_table)
+
+            # 1. Hidden slicer visual
+            slicer_id = uuid.uuid4().hex[:20]
+            slicer_dir = os.path.join(visuals_dir, slicer_id)
+            slicer_json = {
+                "$schema": SCHEMA_VISUAL,
+                "name": slicer_id,
+                "position": {
+                    "x": 0, "y": 0,
+                    "z": (visual_count + created) * 1000,
+                    "height": 0, "width": 0,
+                    "tabOrder": (visual_count + created) * 1000
+                },
+                "visual": {
+                    "visualType": "slicer",
+                    "query": {
+                        "queryState": {
+                            "Values": {
+                                "projections": [{"field": {
+                                    "Column": {
+                                        "Expression": {"SourceRef": {"Entity": table_name}},
+                                        "Property": source_field
+                                    }
+                                }}]
+                            }
+                        }
+                    },
+                    "objects": {
+                        "data": [{"properties": {"mode": _L("'Dropdown'")}}],
+                        "header": [{"properties": {"show": _L("false")}}]
+                    }
+                },
+                "filters": [],
+                "annotations": [{
+                    "name": "MigrationNote",
+                    "value": f"Hidden slicer for set action '{action_name}' (set: {set_name})"
+                }],
+                "isHidden": True
+            }
+            _write_json(os.path.join(slicer_dir, 'visual.json'), slicer_json, ensure_ascii=False)
+            created += 1
+
+            # 2. Bookmarks: set-active and set-clear
+            assign = action.get('assign_behavior', 'assign')
+            for suffix, bm_label in [('active', f'{action_name} (Apply)'),
+                                      ('clear', f'{action_name} (Clear)')]:
+                bm_name = uuid.uuid4().hex[:20]
+                bm = {
+                    'name': bm_name,
+                    'displayName': bm_label,
+                    'explorationState': {
+                        'version': '1.0',
+                        'activeSection': page_display_name,
+                        'sections': {}
+                    },
+                    'options': {'targetVisualIds': [slicer_id]},
+                    'annotations': [{
+                        'name': 'MigrationNote',
+                        'value': f"Set action bookmark ({suffix}): "
+                                 f"set={set_name}, behavior={assign}"
+                    }]
+                }
+                bookmarks.append(bm)
+
+            # 3. Action button that triggers the first (active) bookmark
+            btn_id = uuid.uuid4().hex[:20]
+            btn_dir = os.path.join(visuals_dir, btn_id)
+            btn_json = {
+                "$schema": SCHEMA_VISUAL,
+                "name": btn_id,
+                "position": {
+                    "x": 10, "y": 10 + created * 50,
+                    "z": (visual_count + created) * 1000,
+                    "height": 40, "width": 200,
+                    "tabOrder": (visual_count + created) * 1000
+                },
+                "visual": {
+                    "visualType": "actionButton",
+                    "objects": {
+                        "icon": [{"properties": {"shapeType": _L("'Filter'")}}],
+                        "outline": [{"properties": {"show": _L("false")}}],
+                        "text": [{"properties": {
+                            "show": _L("true"),
+                            "text": _L(f"'{action_name}'")
+                        }}],
+                        "action": [{"properties": {
+                            "type": _L("'Bookmark'"),
+                            "bookmark": _L(f"'{bookmarks[-2]['name']}'")
+                        }}]
+                    }
+                },
+                "annotations": [{
+                    "name": "MigrationNote",
+                    "value": f"Set action button: {action_name} → slicer {slicer_id}"
+                }]
+            }
+            _write_json(os.path.join(btn_dir, 'visual.json'), btn_json, ensure_ascii=False)
+            created += 1
+
+        return created, bookmarks
+
+    def _generate_navigation_buttons(self, visuals_dir, actions, visual_count,
+                                      page_name_map):
+        """Create navigation action buttons with drill-through filter support.
+
+        *page_name_map* maps Tableau worksheet names → PBI page display names so
+        that the ``destinationPage`` property can be set correctly.
+
+        Returns the number of visuals created.
+        """
+        created = 0
+        nav_actions = [a for a in actions if a.get('type') == 'sheet-navigate']
+        for action in nav_actions:
+            target_ws = action.get('target_sheet', '')
+            if not target_ws and action.get('target_worksheets'):
+                target_ws = action['target_worksheets'][0]
+            action_name = action.get('name', target_ws or 'Navigate')
+            dest_page = page_name_map.get(target_ws, target_ws) if target_ws else ''
+
+            visual_id = uuid.uuid4().hex[:20]
+            visual_dir = os.path.join(visuals_dir, visual_id)
+
+            action_props = {"type": _L("'PageNavigation'")}
+            if dest_page:
+                action_props["destinationPage"] = _L(f"'{dest_page}'")
+
+            btn_json = {
+                "$schema": SCHEMA_VISUAL,
+                "name": visual_id,
+                "position": {
+                    "x": 10, "y": 10 + created * 50,
+                    "z": (visual_count + created) * 1000,
+                    "height": 40, "width": 200,
+                    "tabOrder": (visual_count + created) * 1000
+                },
+                "visual": {
+                    "visualType": "actionButton",
+                    "objects": {
+                        "icon": [{"properties": {"shapeType": _L("'ArrowRight'")}}],
+                        "outline": [{"properties": {"show": _L("false")}}],
+                        "text": [{"properties": {
+                            "show": _L("true"),
+                            "text": _L(f"'{action_name}'")
+                        }}],
+                        "action": [{"properties": action_props}]
+                    }
+                },
+                "annotations": [{
+                    "name": "MigrationNote",
+                    "value": f"Navigation action → {dest_page or target_ws}"
+                }]
+            }
+
+            # If the action has field mappings, annotate drill-through filters
+            field_mappings = action.get('field_mappings', [])
+            if field_mappings:
+                mapping_desc = '; '.join(f"{fm['source']}→{fm['target']}" for fm in field_mappings)
+                btn_json['annotations'].append({
+                    'name': 'DrillThroughFields',
+                    'value': mapping_desc
+                })
+
+            _write_json(os.path.join(visual_dir, 'visual.json'), btn_json, ensure_ascii=False)
+            created += 1
+
+        return created
+
+    def _generate_parameter_action_slicers(self, visuals_dir, actions,
+                                            visual_count, converted_objects):
+        """Create slicer visuals for Tableau parameter-change actions.
+
+        Maps each ``param`` action to a slicer visual bound to the
+        corresponding PBI What-If parameter table, so users can
+        interactively change parameter values.
+
+        Returns the number of visuals created.
+        """
+        created = 0
+        param_actions = [a for a in actions if a.get('type') == 'param']
+        parameters = converted_objects.get('parameters', [])
+        param_by_name = {p.get('name', ''): p for p in parameters}
+
+        for action in param_actions:
+            param_name = action.get('target_parameter') or action.get('parameter', '')
+            if not param_name:
+                continue
+            action_name = action.get('name', f'Parameter: {param_name}')
+
+            # Resolve the parameter table name — PBI convention
+            table_name = param_name
+            param_def = param_by_name.get(param_name, {})
+
+            # Determine slicer mode from parameter definition
+            domain_type = param_def.get('domain_type', '')
+            if domain_type == 'range':
+                slicer_mode = 'Between'
+            elif domain_type == 'list':
+                slicer_mode = 'Dropdown'
+            else:
+                slicer_mode = 'Dropdown'
+
+            visual_id = uuid.uuid4().hex[:20]
+            visual_dir = os.path.join(visuals_dir, visual_id)
+
+            slicer_json = {
+                "$schema": SCHEMA_VISUAL,
+                "name": visual_id,
+                "position": {
+                    "x": 10, "y": 10 + (visual_count + created) * 60,
+                    "z": (visual_count + created) * 1000,
+                    "height": 50, "width": 250,
+                    "tabOrder": (visual_count + created) * 1000
+                },
+                "visual": {
+                    "visualType": "slicer",
+                    "query": {
+                        "queryState": {
+                            "Values": {
+                                "projections": [{"field": {
+                                    "Column": {
+                                        "Expression": {"SourceRef": {"Entity": table_name}},
+                                        "Property": param_name
+                                    }
+                                }}]
+                            }
+                        }
+                    },
+                    "objects": {
+                        "data": [{"properties": {"mode": _L(f"'{slicer_mode}'")}}],
+                        "header": [{"properties": {"show": _L("true")}}]
+                    },
+                    "title": action_name
+                },
+                "annotations": [{
+                    "name": "MigrationNote",
+                    "value": f"Parameter action slicer: {action_name} → parameter '{param_name}'"
+                }]
+            }
+            _write_json(os.path.join(visual_dir, 'visual.json'), slicer_json, ensure_ascii=False)
+            created += 1
+
+        return created
+
     def create_report_structure(self, project_dir, report_name, converted_objects):
         """Creates the Report structure in PBIR v4.0 format (identical to PBI Hero reference)
         
@@ -1270,6 +1638,8 @@ class PowerBIProjectGenerator:
 
         # Initialize motion chart bookmarks list (may be populated by dashboard pages)
         self._motion_chart_bookmarks = []
+        # Initialize set action bookmarks list (Sprint 122)
+        self._set_action_bookmarks = []
 
         report_dir = os.path.join(project_dir, f"{report_name}.Report")
         
@@ -1447,6 +1817,9 @@ class PowerBIProjectGenerator:
         # Motion chart bookmarks from Pages shelf
         if self._motion_chart_bookmarks:
             all_bookmarks.extend(self._motion_chart_bookmarks)
+        # Set action bookmarks (Sprint 122)
+        if self._set_action_bookmarks:
+            all_bookmarks.extend(self._set_action_bookmarks)
         if all_bookmarks:
             self._write_bookmark_files(def_dir, all_bookmarks)
 
@@ -1612,6 +1985,7 @@ class PowerBIProjectGenerator:
         tooltip_page_map = {}
 
         self._motion_chart_bookmarks = []
+        self._set_action_bookmarks = []
         if dashboards:
             page_names = self._create_dashboard_pages(
                 pages_dir, dashboards, worksheets, converted_objects, tooltip_page_map)
@@ -1630,6 +2004,9 @@ class PowerBIProjectGenerator:
         # Motion chart bookmarks from Pages shelf
         if self._motion_chart_bookmarks:
             all_bookmarks.extend(self._motion_chart_bookmarks)
+        # Set action bookmarks (Sprint 122)
+        if self._set_action_bookmarks:
+            all_bookmarks.extend(self._set_action_bookmarks)
         if all_bookmarks:
             self._write_bookmark_files(def_dir, all_bookmarks)
 
@@ -1787,6 +2164,14 @@ class PowerBIProjectGenerator:
                                                    tooltip_page_map=tooltip_page_map)
                     visual_count += 1
 
+                    # Sprint 121: annotation textbox overlays
+                    if ws_data and ws_data.get('annotations'):
+                        for ann in ws_data['annotations']:
+                            self._create_annotation_overlay(
+                                visuals_dir, ann, eff_obj, eff_sx, eff_sy,
+                                visual_count)
+                            visual_count += 1
+
                 elif obj.get('type') == 'text':
                     self._create_visual_textbox(visuals_dir, eff_obj, eff_sx, eff_sy, visual_count)
                     visual_count += 1
@@ -1819,6 +2204,29 @@ class PowerBIProjectGenerator:
                                                            scale_x, scale_y, visual_count,
                                                            page_display_name)
                     visual_count += created
+
+                # Sprint 122: Set-value actions → hidden slicer + bookmarks + button
+                set_actions = [a for a in actions if a.get('type') == 'set-value'
+                               and (not a.get('source_worksheet') or a.get('source_worksheet') == db_name
+                                    or any(o.get('worksheetName') == a.get('source_worksheet') for o in db_objects))]
+                if set_actions:
+                    set_created, set_bms = self._generate_set_action_artifacts(
+                        visuals_dir, set_actions, visual_count,
+                        page_display_name, converted_objects)
+                    visual_count += set_created
+                    if set_bms:
+                        if not hasattr(self, '_set_action_bookmarks'):
+                            self._set_action_bookmarks = []
+                        self._set_action_bookmarks.extend(set_bms)
+
+                # Sprint 122: Parameter actions → slicer visuals
+                param_actions = [a for a in actions if a.get('type') == 'param'
+                                 and (not a.get('source_worksheet') or a.get('source_worksheet') == db_name
+                                      or any(o.get('worksheetName') == a.get('source_worksheet') for o in db_objects))]
+                if param_actions:
+                    param_created = self._generate_parameter_action_slicers(
+                        visuals_dir, param_actions, visual_count, converted_objects)
+                    visual_count += param_created
 
             # Create slicer for Pages shelf (Tableau play-axis animation)
             pages_shelf = db.get('pages_shelf', {})
@@ -3970,7 +4378,7 @@ class PowerBIProjectGenerator:
                 forecast_obj["confidenceBandStyle"] = _L("'none'")
             objects["forecast"] = [{"properties": forecast_obj}]
 
-        # Map options (washout/transparency + style)
+        # Map options (washout/transparency + style + zoom/center)
         map_opts = ws_data.get('map_options', {})
         if map_opts and visual_type in ('map', 'filledMap'):
             map_props = {}
@@ -3987,6 +4395,17 @@ class PowerBIProjectGenerator:
                          'streets': "'road'"}
             pbi_style = style_map.get(style.lower(), "'road'")
             map_props["mapStyle"] = _L(pbi_style)
+            # Zoom level
+            zoom_level = map_opts.get('zoom_level')
+            if zoom_level is not None:
+                map_props["autoZoom"] = _L("false")
+                map_props["zoomLevel"] = _L(f"{zoom_level}L")
+            # Center coordinates
+            center_lat = map_opts.get('center_lat')
+            center_lon = map_opts.get('center_lon')
+            if center_lat is not None and center_lon is not None:
+                map_props["latitude"] = _L(f"{center_lat}D")
+                map_props["longitude"] = _L(f"{center_lon}D")
             if map_props:
                 objects["mapControl"] = [{"properties": map_props}]
 

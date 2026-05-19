@@ -1156,6 +1156,7 @@ def _build_map_config(map_style='road', zoom_level=None, center_lat=None,
         'road': 'road',
         'aerial': 'aerial',
         'dark': 'road_dark',
+        'road_dark': 'road_dark',
         'grayscale_light': 'grayscale_light',
         'grayscale_dark': 'grayscale_dark',
     }
@@ -1217,6 +1218,98 @@ def _build_filled_map_config(color_scheme='sequential', diverging_center=None,
             f"{diverging_center}D")
 
     return config
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Sprint 121 — Map Config & Layer Builders (from worksheet data)
+# ═══════════════════════════════════════════════════════════════════
+
+MAP_BASE_STYLE_MAP = {
+    'normal': 'road',
+    'light': 'grayscale_light',
+    'dark': 'road_dark',
+    'satellite': 'aerial',
+    'streets': 'road',
+    'outdoors': 'road',
+}
+
+
+def build_map_config(worksheet):
+    """Build PBI map config from worksheet map_options.
+
+    Reads zoom_level, center_lat, center_lon, style from the worksheet's
+    ``map_options`` dict and delegates to ``_build_map_config``.
+
+    Args:
+        worksheet: Worksheet dict with optional ``map_options`` key.
+
+    Returns:
+        dict: PBIR map visual configuration, or empty dict if no map options.
+    """
+    mo = (worksheet or {}).get('map_options', {})
+    if not mo:
+        return {}
+
+    style_raw = mo.get('style', 'normal')
+    pbi_style = MAP_BASE_STYLE_MAP.get(style_raw, 'road')
+
+    zoom = mo.get('zoom_level')
+    center_lat = mo.get('center_lat')
+    center_lon = mo.get('center_lon')
+
+    return _build_map_config(
+        map_style=pbi_style,
+        zoom_level=zoom,
+        center_lat=center_lat,
+        center_lon=center_lon,
+    )
+
+
+def build_map_layer_config(worksheet):
+    """Build PBI map layer settings from worksheet map_options layers.
+
+    Generates PBIR visual objects for bubble size, color saturation,
+    polygon fill, and heat density based on Tableau layer types.
+
+    Args:
+        worksheet: Worksheet dict with optional ``map_options.layers`` list.
+
+    Returns:
+        dict: PBIR visual objects fragment for map layer configuration,
+              or empty dict if no layer data.
+    """
+    mo = (worksheet or {}).get('map_options', {})
+    layers = mo.get('layers', [])
+    if not layers:
+        return {}
+
+    objects = {}
+    for layer in layers:
+        if not layer.get('enabled', True):
+            continue
+        name = layer.get('name', '')
+        layer_type = layer.get('type', '')
+        opacity = layer.get('opacity')
+
+        # Map layer types to PBI visual object properties
+        ltype = (layer_type or name).lower()
+        if 'heat' in ltype:
+            heat_props = {"show": _L("true")}
+            if opacity is not None:
+                heat_props["intensity"] = _L(f"{opacity}D")
+            objects["heatmap"] = [{"properties": heat_props}]
+        elif 'bubble' in ltype or 'circle' in ltype:
+            bubble_props = {"show": _L("true")}
+            if opacity is not None:
+                bubble_props["transparency"] = _L(f"{round((1 - opacity) * 100)}L")
+            objects["bubbles"] = [{"properties": bubble_props}]
+        elif 'polygon' in ltype or 'fill' in ltype:
+            fill_props = {"show": _L("true")}
+            if opacity is not None:
+                fill_props["transparency"] = _L(f"{round((1 - opacity) * 100)}L")
+            objects["shape"] = [{"properties": fill_props}]
+
+    return objects
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -2717,12 +2810,13 @@ def _apply_visual_decorations(worksheet, visual_type, pbi_type, visual_name, ctm
             label_props["orientation"] = _L("'Vertical'")
         visual_obj["objects"]["labels"] = [{"properties": label_props}]
 
-    # ── Sprint 78: Trend line from analytics ──────────────────
+    # ── Sprint 78/123: Trend line from analytics ──────────────
     trend_lines = worksheet.get('trendLines', worksheet.get('trend_lines', []))
     if trend_lines:
         visual_obj.setdefault("objects", {})
+        trend_objs = []
         for tl in trend_lines:
-            reg_type = tl.get('regression_type', 'linear')
+            reg_type = tl.get('regression_type', tl.get('type', 'linear'))
             reg_map = {'linear': "'Linear'", 'logarithmic': "'Logarithmic'",
                        'exponential': "'Exponential'", 'power': "'Power'",
                        'polynomial': "'Polynomial'", 'moving_average': "'MovingAverage'"}
@@ -2733,9 +2827,16 @@ def _apply_visual_decorations(worksheet, visual_type, pbi_type, visual_name, ctm
                 "regressionType": _L(reg_map.get(reg_type, "'Linear'")),
             }
             if reg_type == 'polynomial':
-                order = tl.get('order', 2)
+                order = tl.get('order', tl.get('degree', 2))
                 tl_props["polynomialOrder"] = _L(f"{order}D")
-            visual_obj["objects"]["trend"] = [{"properties": tl_props}]
+            if tl.get('show_equation'):
+                tl_props["displayEquation"] = _L("true")
+            if tl.get('show_r_squared'):
+                tl_props["displayRSquared"] = _L("true")
+            if tl.get('show_confidence'):
+                tl_props["confidenceBand"] = _L("true")
+            trend_objs.append({"properties": tl_props})
+        visual_obj["objects"]["trend"] = trend_objs
 
     # ── Sprint 78: Mark size encoding → bubble size config ────
     size_enc = mark_enc.get('size', {})

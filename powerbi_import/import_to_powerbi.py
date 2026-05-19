@@ -30,7 +30,9 @@ class PowerBIImporter:
     def import_all(self, generate_pbip=True, report_name=None, output_dir=None,
                    calendar_start=None, calendar_end=None, culture=None,
                    model_mode='import', output_format='pbip', languages=None,
-                   composite_threshold=None, agg_tables='none'):
+                   composite_threshold=None, agg_tables='none',
+                   incremental_refresh=False, incremental_refresh_months=12,
+                   parameterize=True):
         """
         Import all extracted objects and generate Power BI project
         
@@ -75,7 +77,10 @@ class PowerBIImporter:
                                           calendar_start=calendar_start, calendar_end=calendar_end,
                                           culture=culture, model_mode=model_mode,
                                           output_format=output_format, languages=languages,
-                                          composite_threshold=composite_threshold, agg_tables=agg_tables)
+                                          composite_threshold=composite_threshold, agg_tables=agg_tables,
+                                          incremental_refresh=incremental_refresh,
+                                          incremental_refresh_months=incremental_refresh_months,
+                                          parameterize=parameterize)
         
         print()
         print("=" * 80)
@@ -127,7 +132,9 @@ class PowerBIImporter:
     def generate_powerbi_project(self, report_name, converted_objects, output_dir=None,
                                  calendar_start=None, calendar_end=None, culture=None,
                                  model_mode='import', output_format='pbip', paginated=False,
-                                 languages=None, composite_threshold=None, agg_tables='none'):
+                                 languages=None, composite_threshold=None, agg_tables='none',
+                                 incremental_refresh=False, incremental_refresh_months=12,
+                                 parameterize=True):
         """Generate a Power BI Project (.pbip)
 
         Args:
@@ -163,7 +170,10 @@ class PowerBIImporter:
                                                        paginated=paginated,
                                                        languages=languages,
                                                        composite_threshold=composite_threshold,
-                                                       agg_tables=agg_tables)
+                                                       agg_tables=agg_tables,
+                                                       incremental_refresh=incremental_refresh,
+                                                       incremental_refresh_months=incremental_refresh_months,
+                                                       parameterize=parameterize)
             print(f"  [OK] Power BI Project created: {project_path}")
             
         except Exception as e:

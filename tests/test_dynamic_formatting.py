@@ -71,6 +71,81 @@ class TestDynamicFormatMeasures(unittest.TestCase):
         measures = model['model']['tables'][0]['measures']
         self.assertEqual(len(measures), 1)  # No Formatted variant added
 
+    def test_percentage_divide_gets_formatted(self):
+        from tmdl_generator import _inject_dynamic_format_measures
+        model = {
+            'model': {'tables': [{'name': 'T', 'columns': [], 'measures': [
+                {'name': 'Margin', 'expression': 'DIVIDE(SUM([Profit]), SUM([Revenue]))',
+                 'formatString': '0.00%'}
+            ]}]}
+        }
+        _inject_dynamic_format_measures(model)
+        measures = model['model']['tables'][0]['measures']
+        self.assertEqual(len(measures), 2)
+        fmt = [m for m in measures if m['name'] == 'Margin Formatted'][0]
+        self.assertIn('0.0%', fmt['expression'])
+        self.assertIn('#,0.00', fmt['expression'])
+        self.assertEqual(fmt['displayFolder'], 'Formatted')
+
+    def test_percentage_without_divide_not_formatted(self):
+        from tmdl_generator import _inject_dynamic_format_measures
+        model = {
+            'model': {'tables': [{'name': 'T', 'columns': [], 'measures': [
+                {'name': 'Rate', 'expression': 'SUM([Amount])',
+                 'formatString': '0.00%'}
+            ]}]}
+        }
+        _inject_dynamic_format_measures(model)
+        measures = model['model']['tables'][0]['measures']
+        self.assertEqual(len(measures), 1)
+
+    def test_plain_numeric_sum_gets_formatted(self):
+        from tmdl_generator import _inject_dynamic_format_measures
+        model = {
+            'model': {'tables': [{'name': 'T', 'columns': [], 'measures': [
+                {'name': 'Units', 'expression': 'SUM([Quantity])',
+                 'formatString': '#,0'}
+            ]}]}
+        }
+        _inject_dynamic_format_measures(model)
+        measures = model['model']['tables'][0]['measures']
+        fmt = [m for m in measures if m['name'] == 'Units Formatted']
+        self.assertEqual(len(fmt), 1)
+        self.assertIn('"B"', fmt[0]['expression'])
+        self.assertIn('"K"', fmt[0]['expression'])
+
+    def test_plain_numeric_non_sum_not_formatted(self):
+        from tmdl_generator import _inject_dynamic_format_measures
+        model = {
+            'model': {'tables': [{'name': 'T', 'columns': [], 'measures': [
+                {'name': 'Avg', 'expression': 'AVERAGE([X])',
+                 'formatString': '#,0'}
+            ]}]}
+        }
+        _inject_dynamic_format_measures(model)
+        measures = model['model']['tables'][0]['measures']
+        self.assertEqual(len(measures), 1)
+
+    def test_no_format_string_skipped(self):
+        from tmdl_generator import _inject_dynamic_format_measures
+        model = {
+            'model': {'tables': [{'name': 'T', 'columns': [], 'measures': [
+                {'name': 'X', 'expression': 'SUM([A])', 'formatString': ''}
+            ]}]}
+        }
+        _inject_dynamic_format_measures(model)
+        self.assertEqual(len(model['model']['tables'][0]['measures']), 1)
+
+    def test_no_expression_skipped(self):
+        from tmdl_generator import _inject_dynamic_format_measures
+        model = {
+            'model': {'tables': [{'name': 'T', 'columns': [], 'measures': [
+                {'name': 'X', 'expression': '', 'formatString': '$#,0'}
+            ]}]}
+        }
+        _inject_dynamic_format_measures(model)
+        self.assertEqual(len(model['model']['tables'][0]['measures']), 1)
+
     def test_skip_format_wrapper_on_existing_format(self):
         from tmdl_generator import _inject_dynamic_format_measures
         model = {
@@ -391,6 +466,97 @@ class TestDAXQuerySummary(unittest.TestCase):
         self.assertEqual(summary['total_queries'], 3)
         self.assertEqual(summary['tables']['Sales'], 2)
         self.assertEqual(summary['tables']['Products'], 1)
+
+
+class TestDAXSummaryQuery(unittest.TestCase):
+    """Test generate_summary_query — single DAX ROW() evaluating all measures."""
+
+    def test_single_measure(self):
+        from dax_query_generator import generate_summary_query
+        result = generate_summary_query([{'name': 'Total Sales'}])
+        self.assertIn('EVALUATE', result)
+        self.assertIn('ROW', result)
+        self.assertIn('[Total Sales]', result)
+
+    def test_multiple_measures(self):
+        from dax_query_generator import generate_summary_query
+        result = generate_summary_query([
+            {'name': 'Sales'}, {'name': 'Cost'}, {'name': 'Profit'},
+        ])
+        self.assertIn('[Sales]', result)
+        self.assertIn('[Cost]', result)
+        self.assertIn('[Profit]', result)
+
+    def test_empty_input(self):
+        from dax_query_generator import generate_summary_query
+        self.assertEqual(generate_summary_query([]), '')
+
+    def test_measure_with_quotes_escaped(self):
+        from dax_query_generator import generate_summary_query
+        result = generate_summary_query([{'name': 'Year "Total"'}])
+        self.assertIn('Year ""Total""', result)
+
+    def test_empty_name_skipped(self):
+        from dax_query_generator import generate_summary_query
+        result = generate_summary_query([{'name': ''}])
+        self.assertEqual(result, '')
+
+
+class TestSaveValidationQueriesAlias(unittest.TestCase):
+    """Test that save_validation_queries is an alias for export_dax_queries."""
+
+    def test_alias(self):
+        from dax_query_generator import save_validation_queries, export_dax_queries
+        self.assertIs(save_validation_queries, export_dax_queries)
+
+
+class TestExportSensitivityCSV(unittest.TestCase):
+    """Test export_sensitivity_csv from governance module."""
+
+    def test_creates_file(self):
+        from governance import export_sensitivity_csv
+        labels = [{'table': 'T', 'column': 'ssn', 'label': 'Highly Confidential',
+                    'pattern': 'SSN'}]
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, 'labels.csv')
+            count = export_sensitivity_csv(labels, path)
+            self.assertTrue(os.path.exists(path))
+            self.assertEqual(count, 1)
+
+    def test_empty_labels(self):
+        from governance import export_sensitivity_csv
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, 'empty.csv')
+            count = export_sensitivity_csv([], path)
+            self.assertEqual(count, 0)
+            self.assertTrue(os.path.exists(path))
+
+    def test_csv_content(self):
+        import csv as csv_mod
+        from governance import export_sensitivity_csv
+        labels = [
+            {'table': 'Users', 'column': 'email', 'label': 'Confidential',
+             'pattern': 'Email'},
+            {'table': 'HR', 'column': 'salary', 'label': 'Internal',
+             'pattern': 'Salary'},
+        ]
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, 'labels.csv')
+            export_sensitivity_csv(labels, path)
+            with open(path, newline='', encoding='utf-8') as f:
+                rows = list(csv_mod.DictReader(f))
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(rows[0]['table'], 'Users')
+            self.assertEqual(rows[1]['label'], 'Internal')
+
+    def test_csv_header(self):
+        from governance import export_sensitivity_csv
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, 'h.csv')
+            export_sensitivity_csv([], path)
+            with open(path, encoding='utf-8') as f:
+                header = f.readline().strip()
+            self.assertEqual(header, 'table,column,label,pattern')
 
 
 if __name__ == '__main__':

@@ -175,3 +175,36 @@ def generate_query_summary(queries):
         'tables': {k: len(v) for k, v in tables.items()},
         'measures_by_table': tables,
     }
+
+
+def generate_summary_query(measures):
+    """Generate a single DAX query that evaluates all measures at once.
+
+    Creates a ROW() expression with one column per measure for quick validation.
+
+    Args:
+        measures: list of dicts with 'name' and optionally 'table' keys
+
+    Returns:
+        str: DAX query string, or empty string if no measures
+    """
+    if not measures:
+        return ''
+
+    columns = []
+    for m in measures:
+        name = m.get('name', '')
+        if not name:
+            continue
+        safe = name.replace('"', '""')
+        columns.append(f'    "{safe}", [{name}]')
+
+    if not columns:
+        return ''
+
+    body = ',\n'.join(columns)
+    return f'EVALUATE\nROW(\n{body}\n)'
+
+
+# Alias for API consistency
+save_validation_queries = export_dax_queries

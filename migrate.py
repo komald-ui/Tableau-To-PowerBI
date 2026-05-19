@@ -322,7 +322,9 @@ def _run_fabric_generation(report_name=None, output_dir=None,
 def run_generation(report_name=None, output_dir=None, calendar_start=None,
                    calendar_end=None, culture=None, model_mode='import',
                    output_format='pbip', paginated=False, languages=None,
-                   composite_threshold=None, agg_tables='none'):
+                   composite_threshold=None, agg_tables='none',
+                   incremental_refresh=False, incremental_refresh_months=12,
+                   parameterize=True):
     """Generate Power BI project (.pbip) from extracted data
 
     Args:
@@ -333,6 +335,9 @@ def run_generation(report_name=None, output_dir=None, calendar_start=None,
         culture: Override culture/locale for semantic model (e.g., fr-FR)
         paginated: If True, generate paginated report layout alongside interactive report
         languages: Comma-separated additional locales (e.g. 'fr-FR,de-DE')
+        incremental_refresh: If True, detect and configure incremental refresh policies
+        incremental_refresh_months: Rolling window in months (default: 12)
+        parameterize: If True, inject RangeStart/RangeEnd M parameters (default: True)
     """
     print_step(2, 2, "POWER BI PROJECT GENERATION")
 
@@ -353,7 +358,10 @@ def run_generation(report_name=None, output_dir=None, calendar_start=None,
                             calendar_start=calendar_start, calendar_end=calendar_end,
                             culture=culture, model_mode=model_mode,
                             output_format=output_format, languages=languages,
-                            composite_threshold=composite_threshold, agg_tables=agg_tables)
+                            composite_threshold=composite_threshold, agg_tables=agg_tables,
+                            incremental_refresh=incremental_refresh,
+                            incremental_refresh_months=incremental_refresh_months,
+                            parameterize=parameterize)
 
         # Collect generation stats from the output
         base_dir = output_dir or os.path.join('artifacts', 'powerbi_projects', 'migrated')
@@ -2053,6 +2061,30 @@ def _add_migration_args(parser):
         metavar='DIR',
         default=None,
         help='Path to an existing .pbip project — merge changes incrementally, preserving manual edits'
+    )
+
+    # ── Incremental Refresh (Sprint 120) ─────────────────────────────
+    parser.add_argument(
+        '--incremental-refresh',
+        action='store_true',
+        default=False,
+        help='Detect and configure incremental refresh policies on eligible tables '
+             '(tables with DateTime columns and query-foldable connectors). '
+             'Adds RangeStart/RangeEnd M parameters and refreshPolicy TMDL blocks.'
+    )
+    parser.add_argument(
+        '--incremental-refresh-months',
+        metavar='N',
+        type=int,
+        default=12,
+        help='Rolling window size in months for incremental refresh (default: 12)'
+    )
+    parser.add_argument(
+        '--no-parameterize',
+        action='store_false',
+        dest='parameterize',
+        help='Disable RangeStart/RangeEnd M parameter injection for incremental refresh '
+             '(still generates refreshPolicy blocks but without M expression wiring)'
     )
 
     parser.add_argument(
@@ -5694,6 +5726,9 @@ def _run_single_migration(args):
             output_format=args.output_format,
             paginated=getattr(args, 'paginated', False),
             languages=getattr(args, 'languages', None),
+            incremental_refresh=getattr(args, 'incremental_refresh', False),
+            incremental_refresh_months=getattr(args, 'incremental_refresh_months', 12),
+            parameterize=getattr(args, 'parameterize', True),
         )
         if results['generation']:
             progress.complete(f"Generated {source_basename}")

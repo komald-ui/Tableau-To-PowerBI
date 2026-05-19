@@ -675,3 +675,29 @@ def generate_endorsement_report(migration_metadata, tmdl_tables=None):
         report['overall_sensitivity'] = highest
 
     return report
+
+
+def export_sensitivity_csv(labels, output_path):
+    """Export sensitivity label results to a CSV file.
+
+    Args:
+        labels: list of dicts from infer_sensitivity_labels()
+        output_path: file path for the output CSV
+
+    Returns:
+        int: number of rows written
+    """
+    import csv
+
+    os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else '.', exist_ok=True)
+    with open(output_path, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=['table', 'column', 'label', 'pattern'])
+        writer.writeheader()
+        for row in labels:
+            writer.writerow({
+                'table': row.get('table', ''),
+                'column': row.get('column', ''),
+                'label': row.get('label', ''),
+                'pattern': row.get('pattern', ''),
+            })
+    return len(labels)

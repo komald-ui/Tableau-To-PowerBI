@@ -1,5 +1,69 @@
 # Changelog
 
+## v37.0.0 — Sprints 120–124 — Migration Completeness & Analytics Parity
+
+### Sprint 120 — Incremental Refresh & M Parameter Wiring
+- **tmdl_generator.py**: Incremental refresh detection and configuration
+  - `_detect_incremental_refresh_tables()` — scans tables for DateTime columns suitable as refresh boundaries
+  - `_generate_refresh_policy_tmdl()` — generates TMDL refreshPolicy block (configurable window, default 12 months)
+  - `_inject_range_filter_m()` — wraps M partitions with `Table.SelectRows` for RangeStart/RangeEnd filtering
+  - `_generate_m_parameters_tmdl()` — generates RangeStart/RangeEnd M parameter definitions
+  - `_parameterize_m_connections()` — replaces literal server/database strings with M parameter references
+  - `_generate_connection_parameters_tmdl()` — generates ServerName/DatabaseName M parameters
+- **migrate.py**: 3 CLI flags: `--incremental-refresh`, `--incremental-refresh-months N`, `--no-parameterize`
+- **import_to_powerbi.py**: Threads incremental refresh options through the pipeline
+- **pbip_generator.py**: Forwards incremental refresh params and displays stats
+
+### Sprint 121 — Annotation & Map Migration
+- **extract_tableau_data.py**: Annotation extraction depth
+  - Extracts `<point-annotation>` and `<area-annotation>` elements: text, position (x/y), font formatting
+  - Extracts `<map-options>`: zoom level, center lat/lon, base map style
+- **pbip_generator.py**: Annotation → textbox overlay conversion
+  - Generates PBI textbox visuals positioned near the target chart area
+  - MigrationNote: "Converted from Tableau annotation"
+- **visual_generator.py**: Map visual configuration
+  - `build_map_config()` — zoom, center, base map style (normal/dark/light/satellite → PBI map themes)
+  - `build_map_layer_config()` — bubble size range, color saturation, polygon fill, heat map density
+
+### Sprint 122 — Set Actions & Interactive Parity
+- **extract_tableau_data.py**: Deepened action extraction
+  - Set actions: target set name, source field, assign behavior, clearing behavior, activation
+  - Navigate actions: target sheet name, field mappings
+  - Parameter actions: target parameter name, source field
+- **pbip_generator.py**: Interactive action migration
+  - `_generate_set_action_artifacts()` — hidden slicer + bookmark states + action button toggle
+  - `_generate_navigation_buttons()` — PBI PageNavigation buttons with drill-through filters
+  - `_generate_parameter_action_slicers()` — What-If parameter slicers for parameter change actions
+
+### Sprint 123 — Analytics Pane & Trend Lines
+- **extract_tableau_data.py**: Analytics object extraction
+  - Trend lines: type (linear/logarithmic/exponential/polynomial/power), degree, equation/R² display
+  - Distribution bands: percentile ranges, standard deviation bands, confidence intervals
+  - Forecast config: periods, confidence, seasonality model
+  - Clustering config: number of clusters, fields
+- **visual_generator.py**: Analytics pane migration
+  - `build_trend_line_config()` — all 5 regression types with equation/R² display
+  - `build_distribution_config()` — percentile lines, std dev bands, IQR
+  - `build_forecast_config()` — forecast length, confidence band, seasonality
+  - `build_clustering_note()` — MigrationNote for R/Python visual recommendation
+
+### Sprint 124 — Dynamic Formatting & Data Quality
+- **tmdl_generator.py**: Dynamic format strings
+  - `_inject_dynamic_format_measures()` — currency ($, €), percentage, K/M/B abbreviation FORMAT() wrappers
+- **governance.py**: Data quality & sensitivity
+  - `classify_endorsement()` — GREEN/YELLOW/RED → certified/promoted/none recommendation
+  - `infer_sensitivity_labels()` — PII (email, SSN, phone) → Confidential, financial → Internal
+  - `export_sensitivity_csv()` — CSV output for sensitivity label recommendations
+- **dax_query_generator.py**: DAX validation queries
+  - `generate_summary_query()` — ROW-based all-measures validation query
+  - `save_validation_queries()` — exports .dax files for DAX Studio verification
+
+### Tests
+- 154+ new tests across 4 test files (54 + 45 + 32 + 30 + 48 = 209 total new)
+- Total: **8,511+ tests** (8,511 passed, 66 skipped, 1 xfailed)
+
+---
+
 ## v36.0.0 — Sprints 139–145 — Stream H: Tableau Server Enterprise Migration
 
 ### Sprint 139 — Site Topology Discovery

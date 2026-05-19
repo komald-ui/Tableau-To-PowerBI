@@ -1971,38 +1971,111 @@ class TableauExtractor:
     
     def extract_annotations(self, worksheet):
         """Extracts annotations (text callouts on charts).
-        
-        Parses <annotation> elements containing point/area annotations with text.
+
+        Parses <annotation>, <point-annotation>, and <area-annotation>
+        elements with text, position, target mark, and font formatting.
         """
         annotations = []
-        
-        for ann in worksheet.findall('.//annotation'):
+
+        # Collect from all annotation element types
+        ann_tags = (
+            list(worksheet.findall('.//annotation'))
+            + list(worksheet.findall('.//point-annotation'))
+            + list(worksheet.findall('.//area-annotation'))
+        )
+
+        for ann in ann_tags:
+            tag_name = ann.tag  # annotation, point-annotation, area-annotation
+            if tag_name == 'point-annotation':
+                ann_type = 'point'
+            elif tag_name == 'area-annotation':
+                ann_type = 'area'
+            else:
+                ann_type = ann.get('type', 'point')
+
             ann_data = {
-                'type': ann.get('type', 'point'),  # point, area, mark
+                'type': ann_type,
                 'text': '',
                 'position': {},
+                'formatting': {},
+                'target_mark': {},
             }
-            
-            # Annotation text
+
+            # Annotation text from <formatted-text><run>
             formatted = ann.find('.//formatted-text')
             if formatted is not None:
                 parts = []
                 for run in formatted.findall('.//run'):
                     if run.text:
                         parts.append(run.text)
+                    # Extract font formatting from the first run
+                    if not ann_data['formatting']:
+                        fmt = {}
+                        font_size = run.get('fontsize', run.get('font-size', ''))
+                        if font_size:
+                            fmt['font_size'] = font_size
+                        font_color = run.get('fontcolor', run.get('font-color', ''))
+                        if font_color:
+                            fmt['font_color'] = font_color
+                        bold = run.get('bold', '')
+                        if bold:
+                            fmt['bold'] = bold.lower() == 'true'
+                        italic = run.get('italic', '')
+                        if italic:
+                            fmt['italic'] = italic.lower() == 'true'
+                        if fmt:
+                            ann_data['formatting'] = fmt
                 ann_data['text'] = ''.join(parts)
-            
-            # Position
+
+            # Position — point annotations use x/y, area annotations use x/y/w/h
             pos = ann.find('.//point')
             if pos is not None:
                 ann_data['position'] = {
                     'x': pos.get('x', '0'),
                     'y': pos.get('y', '0'),
                 }
-            
+            # Area rect
+            rect = ann.find('.//rect')
+            if rect is not None:
+                ann_data['position'] = {
+                    'x': rect.get('x', '0'),
+                    'y': rect.get('y', '0'),
+                    'w': rect.get('w', '100'),
+                    'h': rect.get('h', '50'),
+                }
+            # Direct attributes on the annotation element
+            if not ann_data['position']:
+                ax = ann.get('x', '')
+                ay = ann.get('y', '')
+                if ax or ay:
+                    ann_data['position'] = {'x': ax or '0', 'y': ay or '0'}
+                    aw = ann.get('w', '')
+                    ah = ann.get('h', '')
+                    if aw:
+                        ann_data['position']['w'] = aw
+                    if ah:
+                        ann_data['position']['h'] = ah
+
+            # Target mark (field + value the annotation points to)
+            target = ann.find('.//target')
+            if target is not None:
+                field = target.get('field', target.get('column', ''))
+                value = target.get('value', '')
+                if field:
+                    ann_data['target_mark'] = {
+                        'field': _strip_brackets(field),
+                        'value': value,
+                    }
+
+            # Clean up empty sub-dicts
+            if not ann_data['formatting']:
+                del ann_data['formatting']
+            if not ann_data['target_mark']:
+                del ann_data['target_mark']
+
             if ann_data['text']:
                 annotations.append(ann_data)
-        
+
         return annotations
     
     def extract_workbook_actions(self, root):
@@ -2064,10 +2137,32 @@ class TableauExtractor:
                 if field_mappings:
                     action_data['field_mappings'] = field_mappings
             
+            # Sheet-navigate action: capture target sheet for PageNavigation
+            if action_type == 'sheet-navigate':
+                # Flatten first target worksheet for convenience
+                if action_data['target_worksheets']:
+                    action_data['target_sheet'] = action_data['target_worksheets'][0]
+                else:
+                    action_data['target_sheet'] = action.get('target-sheet', '')
+                # Capture field mappings for drill-through filter binding
+                field_mappings = []
+                for fm in action.findall('.//field-mapping'):
+                    src = _strip_brackets(fm.get('source-field', ''))
+                    tgt = _strip_brackets(fm.get('target-field', ''))
+                    field_mappings.append({'source': src, 'target': tgt})
+                if field_mappings:
+                    action_data['field_mappings'] = field_mappings
+
             # Parameter action
             if action_type == 'param':
                 action_data['parameter'] = action.get('param', '')
                 action_data['source_field'] = _strip_brackets(action.get('source-field', ''))
+                # Also capture target parameter name from nested element
+                param_elem = action.find('.//param')
+                if param_elem is not None:
+                    action_data['target_parameter'] = _strip_brackets(param_elem.get('name', param_elem.text or ''))
+                elif action_data['parameter']:
+                    action_data['target_parameter'] = _strip_brackets(action_data['parameter'])
             
             # Set-value action: parse target set details
             if action_type == 'set-value':
@@ -2079,6 +2174,14 @@ class TableauExtractor:
                 # Also capture from attributes
                 action_data['set_name'] = action.get('set', action.get('set-name', '')).replace('[', '').replace(']', '')
                 action_data['set_field'] = action.get('set-field', '').replace('[', '').replace(']', '')
+                # Source field driving the set membership
+                action_data['source_field'] = _strip_brackets(action.get('source-field', ''))
+                if not action_data['source_field'] and set_elem is not None:
+                    action_data['source_field'] = _strip_brackets(set_elem.get('field', ''))
+                # Clearing behavior — normalize from generic 'clearing' attribute
+                action_data['clearing_behavior'] = action.get('clearing', 'keep')
+                # Activation — normalize from generic 'run-on' / 'activation'
+                action_data['activation'] = run_on if run_on else 'select'
 
             actions.append(action_data)
         
@@ -2569,7 +2672,7 @@ class TableauExtractor:
         """Extracts trend lines from a worksheet"""
         trend_lines = []
         for tl in worksheet.findall('.//trend-line'):
-            trend_lines.append({
+            tl_data = {
                 'type': tl.get('type', 'linear'),
                 'field': tl.get('column', ''),
                 'color': tl.get('color', ''),
@@ -2577,12 +2680,19 @@ class TableauExtractor:
                 'show_equation': tl.get('show-equation', 'false') == 'true',
                 'show_r_squared': tl.get('show-r-squared', 'false') == 'true',
                 'per_color': tl.get('per-color', 'false') == 'true',
-            })
+            }
+            degree = tl.get('degree', tl.get('order', ''))
+            if degree:
+                try:
+                    tl_data['order'] = int(degree)
+                except (ValueError, TypeError):
+                    pass
+            trend_lines.append(tl_data)
         # Also check <trend-lines><trend-line> nested format
         for tl_container in worksheet.findall('.//trend-lines'):
             for tl in tl_container.findall('.//trend-line'):
                 if not any(t.get('type') == tl.get('type', 'linear') for t in trend_lines):
-                    trend_lines.append({
+                    tl_data = {
                         'type': tl.get('type', 'linear'),
                         'field': tl.get('column', ''),
                         'color': tl.get('color', ''),
@@ -2590,7 +2700,14 @@ class TableauExtractor:
                         'show_equation': tl.get('show-equation', 'false') == 'true',
                         'show_r_squared': tl.get('show-r-squared', 'false') == 'true',
                         'per_color': tl.get('per-color', 'false') == 'true',
-                    })
+                    }
+                    degree = tl.get('degree', tl.get('order', ''))
+                    if degree:
+                        try:
+                            tl_data['order'] = int(degree)
+                        except (ValueError, TypeError):
+                            pass
+                    trend_lines.append(tl_data)
         return trend_lines
 
     def extract_pages_shelf(self, worksheet):
@@ -2701,7 +2818,7 @@ class TableauExtractor:
         return forecasts
 
     def extract_map_options(self, worksheet):
-        """Extracts map configuration (washout, style, layers, pan/zoom)."""
+        """Extracts map configuration (washout, style, layers, pan/zoom, zoom/center)."""
         map_opts = {}
         mo = worksheet.find('.//map-options')
         if mo is not None:
@@ -2712,13 +2829,39 @@ class TableauExtractor:
                 'pan_zoom': mo.get('pan-zoom', 'true') == 'true',
                 'unit': mo.get('unit', 'miles'),
             }
+            # Zoom level
+            zoom = mo.get('zoom-level', mo.get('zoom', ''))
+            if zoom:
+                try:
+                    map_opts['zoom_level'] = int(float(zoom))
+                except (ValueError, TypeError):
+                    pass
+            # Center coordinates
+            center_lat = mo.get('center-latitude', mo.get('center-lat', ''))
+            center_lon = mo.get('center-longitude', mo.get('center-lon', ''))
+            if center_lat and center_lon:
+                try:
+                    map_opts['center_lat'] = float(center_lat)
+                    map_opts['center_lon'] = float(center_lon)
+                except (ValueError, TypeError):
+                    pass
             # Map layers
             layers = []
             for ml in mo.findall('.//map-layer'):
-                layers.append({
+                layer_data = {
                     'name': ml.get('name', ''),
                     'enabled': ml.get('enabled', 'true') == 'true',
-                })
+                }
+                layer_type = ml.get('type', ml.get('mark-type', ''))
+                if layer_type:
+                    layer_data['type'] = layer_type
+                opacity = ml.get('opacity', '')
+                if opacity:
+                    try:
+                        layer_data['opacity'] = float(opacity)
+                    except (ValueError, TypeError):
+                        pass
+                layers.append(layer_data)
             if layers:
                 map_opts['layers'] = layers
         # Also check for <mapsources>
