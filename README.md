@@ -1,15 +1,15 @@
-# Tableau → Power BI
+# 🔄 Tableau → Power BI
 
 **Automated Migration Tool** — convert Tableau workbooks (`.twb`/`.twbx`) to Power BI projects (`.pbip`) in seconds, fully automated, zero manual rework.
 
 | | |
 |---|---|
-| **Version** | 34.0.0 |
-| **Tests** | 8,088 passed · 96.2 % coverage |
-| **Python** | 3.12+ · zero external dependencies |
-| **License** | MIT |
+| 🏷️ **Version** | 34.0.0 |
+| ✅ **Tests** | 8,088 passed · 96.2 % coverage |
+| 🐍 **Python** | 3.12+ · zero external dependencies |
+| 📜 **License** | MIT |
 
-| **Capabilities** | 180+ DAX conversions · 128+ visual types · 79 connectors · 20 object types |
+| 🎯 **Capabilities** | 180+ DAX conversions · 128+ visual types · 79 connectors · 20 object types |
 
 ---
 
@@ -43,51 +43,46 @@ pip install tableauhyperapi           # .hyper extract file reading (v2+ format)
 
 ### More ways to migrate
 
+| Use Case | Command |
+|----------|---------|
+| 📄 **Single workbook** | `python migrate.py workbook.twbx` |
+| 📄 With Prep flow | `python migrate.py workbook.twbx --prep flow.tflx` |
+| 📄 Readiness check only | `python migrate.py workbook.twbx --assess` |
+| 📁 **Batch (folder)** | `python migrate.py --batch folder/ --output-dir /tmp/out` |
+| 📁 Global merge analysis | `python migrate.py --global-assess --batch folder/` |
+| ☁️ **Server — single** | `python migrate.py --server URL --workbook "Name" --token-name pat --token-secret secret` |
+| ☁️ Server — batch all | `python migrate.py --server URL --server-batch Project --server-assets all --server-preserve-folders ...` |
+| 🔗 **Shared model** | `python migrate.py --shared-model wb1.twbx wb2.twbx --model-name "Sales"` |
+| 🔗 Merge assessment | `python migrate.py --shared-model wb1.twbx wb2.twbx --assess-merge` |
+| 🚀 **Deploy to PBI** | `python migrate.py workbook.twbx --deploy WORKSPACE_ID --deploy-refresh` |
+| 🚀 Fabric-native output | `python migrate.py workbook.twbx --output-format fabric` |
+| 🌿 **Prep lineage** | `python migrate.py --prep-lineage folder/ flow1.tfl flow2.tfl` |
+
+<details>
+<summary><b>More examples</b> (click to expand)</summary>
+
 ```bash
-# 🔄 With a Tableau Prep flow
-python migrate.py workbook.twbx --prep flow.tflx
-
-# ☁️ Directly from Tableau Server
-python migrate.py --server https://tableau.company.com --workbook "Sales" \
-    --token-name my-pat --token-secret secret123
-
-# 📁 Batch — migrate an entire folder
-python migrate.py --batch examples/tableau_samples/ --output-dir /tmp/output
-
-# 🔍 Pre-migration readiness check
-python migrate.py workbook.twbx --assess
-
-# 🚀 Migrate + deploy to Power BI Service in one shot
-python migrate.py workbook.twbx --deploy WORKSPACE_ID --deploy-refresh
-
-# 🧙 Interactive wizard (guided step-by-step)
+# Interactive wizard (guided step-by-step)
 python migrate.py workbook.twbx --wizard
 
-# 🔗 Shared Semantic Model — merge multiple workbooks
-python migrate.py --shared-model wb1.twbx wb2.twbx --model-name "Shared Sales"
+# Download only workbooks and datasources from server (flat directory)
+python migrate.py --server https://tableau.company.com --server-batch Sales \
+    --server-assets workbooks datasources --token-name pat --token-secret secret
 
-# 🌐 Global assessment — find merge candidates across ALL workbooks
-python migrate.py --global-assess --batch examples/tableau_samples/
-python migrate.py --global-assess wb1.twbx wb2.twbx wb3.twbx wb4.twbx
+# Deploy shared model as bundle to Fabric
+python migrate.py --shared-model wb1.twbx wb2.twbx --deploy-bundle WORKSPACE_ID --bundle-refresh
 
-# � Deploy shared model to Fabric workspace as a bundle
-python migrate.py --shared-model wb1.twbx wb2.twbx --deploy-bundle WORKSPACE_ID
-python migrate.py --deploy-bundle WORKSPACE_ID --output-dir artifacts/shared/MyModel --bundle-refresh
+# Deploy an existing shared model project
+python migrate.py --deploy-bundle WORKSPACE_ID --output-dir artifacts/shared/MyModel
 
-# �🔍 Pre-merge assessment (assess without generating)
-python migrate.py --shared-model wb1.twbx wb2.twbx --assess-merge
-# 🏭 Fabric-native output (Lakehouse + Dataflow Gen2 + PySpark Notebook + DirectLake)
-python migrate.py workbook.twbx --output-format fabric
-
-# ⚡ Optimize DAX + auto-inject Time Intelligence measures
+# Optimize DAX + auto-inject Time Intelligence measures
 python migrate.py workbook.twbx --optimize-dax --time-intelligence auto
 
-# 🔗 Prep Flow Lineage — analyze cross-flow dependencies & merge candidates
-python migrate.py --prep-lineage examples/prep_portfolio/ flow1.tfl flow2.tfl
-
-# 📦 Bulk Prep Flow — export Power Query M, sources & lineage (no .pbip)
+# Bulk Prep Flow export (Power Query M + sources + lineage, no .pbip)
 python migrate.py --batch examples/prep_portfolio/ --output-dir /tmp/prep_output
 ```
+
+</details>
 
 ---
 
@@ -185,14 +180,14 @@ Merge multiple Tableau workbooks into **one shared semantic model** with thin re
 
 ---
 
-## 🔧 How It Works
+## ⚙️ How It Works
 
 ```mermaid
 flowchart LR
     A["📄 .twbx/.twb\nTableau Workbook"] --> B["🔍 EXTRACT\n17 JSON files"]
     P["📋 .tfl/.tflx\nPrep Flow"] -.-> B
     S["☁️ Tableau Server\n(optional)"] -.-> B
-    B --> C["⚙️ GENERATE\n.pbip project"]
+    B --> C["🛠️ GENERATE\n.pbip project"]
     B --> F["🏭 GENERATE\nFabric artifacts"]
     C --> D["📊 Power BI Desktop\nOpen & validate"]
     C -.-> E["🚀 DEPLOY\nPBI Service / Fabric"]
@@ -208,11 +203,11 @@ flowchart LR
     style F fill:#0078D4,color:#fff,stroke:#0078D4
 ```
 
-**Step 1 — Extract:** Parses Tableau XML into 17 structured JSON files (worksheets, datasources, calculations, etc.)
+**🔍 Step 1 — Extract:** Parses Tableau XML into 17 structured JSON files (worksheets, datasources, calculations, etc.)
 
-**Step 2 — Generate:** Converts JSON into a complete `.pbip` project with PBIR v4.0 report and TMDL semantic model
+**🛠️ Step 2 — Generate:** Converts JSON into a complete `.pbip` project with PBIR v4.0 report and TMDL semantic model
 
-**Step 3 — Deploy** *(optional):* Packages and uploads to Power BI Service or Microsoft Fabric
+**🚀 Step 3 — Deploy** *(optional):* Packages and uploads to Power BI Service or Microsoft Fabric
 
 ### 🏭 Fabric-Native Output Mode
 
@@ -680,6 +675,8 @@ TableauToPowerBI/
 | `--token-name NAME` | PAT name for Tableau Server auth |
 | `--token-secret SECRET` | PAT secret for Tableau Server auth |
 | `--server-batch PROJECT` | Download all workbooks from a server project |
+| `--server-assets TYPE [...]` | Asset types to download: `workbooks`, `flows`, `datasources`, `all` (default: workbooks flows) |
+| `--server-preserve-folders` | Mirror Tableau Server project folder structure locally |
 | `--languages LOCALES` | Multi-language culture TMDL files (e.g., `fr-FR,de-DE`) |
 | `--goals` | Convert Tableau Pulse metrics to PBI Goals |
 | `--shared-model WB [WB ...]` | Merge multiple workbooks into one shared semantic model |
@@ -888,6 +885,6 @@ python -m pytest tests/ -q  # Make sure tests pass
 
 ---
 
-## License
+## 📜 License
 
 MIT
