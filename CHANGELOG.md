@@ -1,5 +1,19 @@
 # Changelog
 
+## v37.1.0 — Bulk Assessment Implementation
+
+### `--bulk-assess` — Standalone Portfolio Assessment
+- **migrate.py**: `run_bulk_assessment_mode()` — full implementation of the `--bulk-assess DIR` CLI flag
+  - Recursively discovers `.twb`/`.twbx` workbooks and `.tfl`/`.tflx` prep flows in a directory
+  - Extracts each workbook via `TableauExtractor` and analyzes prep flows via `prep_flow_analyzer`
+  - Runs portfolio readiness scoring via `server_assessment.run_server_assessment()` (GREEN/YELLOW/RED, effort, waves)
+  - Runs cross-workbook merge analysis via `global_assessment.run_global_assessment()` (pairwise heatmap, clusters)
+  - Runs prep flow lineage via `prep_lineage.build_lineage_graph()` when ≥2 flows are found
+  - Generates HTML dashboards + JSON reports to output directory (default: `artifacts/bulk_assess/`)
+  - No Tableau Server connection required — works entirely on local files
+- **tests/test_bulk_assessment.py**: 6 new tests (nonexistent dir, empty dir, multi-workbook portfolio, single workbook, default output dir, recursive discovery)
+- **Documentation**: Updated ENTERPRISE_GUIDE, FAQ, MIGRATION_CHECKLIST, ARCHITECTURE
+
 ## v37.0.0 — Sprints 120–124 — Migration Completeness & Analytics Parity
 
 ### Sprint 120 — Incremental Refresh & M Parameter Wiring

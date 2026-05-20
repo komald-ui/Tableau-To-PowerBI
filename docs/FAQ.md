@@ -287,6 +287,21 @@ python migrate.py --batch /path/to/tableau/files/ --output-dir /tmp/output
 
 This processes all `.twb` and `.twbx` files in the directory and generates separate .pbip projects for each.
 
+### How do I run a full portfolio assessment without migrating?
+
+Use `--bulk-assess` to get readiness scoring, merge analysis, and prep flow lineage in one command — no Tableau Server connection required:
+
+```bash
+python migrate.py --bulk-assess /path/to/workbooks/ --output-dir /tmp/assessment
+```
+
+This recursively discovers `.twb`/`.twbx` workbooks and `.tfl`/`.tflx` prep flows, then generates:
+- **Portfolio readiness report** — per-workbook GREEN/YELLOW/RED grading, effort estimation, migration wave plan
+- **Cross-workbook merge analysis** — pairwise overlap heatmap, merge clusters (equivalent to `--global-assess`)
+- **Prep flow lineage** — cross-flow dependency graph and merge recommendations (when ≥2 flows are found)
+
+All reports are saved as HTML dashboards + JSON to the output directory (defaults to `artifacts/bulk_assess/`).
+
 ### How do I merge multiple workbooks into a shared semantic model?
 
 Use `--shared-model` to merge workbooks that share the same data sources into one Power BI semantic model with thin reports:

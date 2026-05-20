@@ -39,17 +39,28 @@ Discovery → Assessment → Wave Planning → Pilot → Batch Migration → Val
 
 ## Phase 2: Assessment
 
-1. **Server Assessment**: Score each workbook RED/YELLOW/GREEN
+1. **Bulk Assessment** (standalone — no Tableau Server required): Full portfolio assessment on a local folder of workbooks and prep flows
+   ```bash
+   python migrate.py --bulk-assess /path/to/workbooks/ --output-dir /tmp/assessment
+   ```
+   This combines three analyses in a single command:
+   - **Portfolio readiness**: per-workbook GREEN/YELLOW/RED scoring, effort estimation, wave planning
+   - **Cross-workbook merge analysis**: pairwise overlap scoring, merge clusters (same as `--global-assess`)
+   - **Prep flow lineage**: cross-flow dependency graph and merge recommendations (if `.tfl`/`.tflx` files are present)
+
+   Output: HTML dashboards + JSON reports in the output directory.
+
+2. **Server Assessment**: Score each workbook RED/YELLOW/GREEN (requires Tableau Server)
    ```bash
    python migrate.py --batch /path/to/workbooks/ --assess
    ```
 
-2. **Strategy Advisor**: Get Import/DirectQuery/Composite recommendations
+3. **Strategy Advisor**: Get Import/DirectQuery/Composite recommendations per workbook
    ```bash
    python migrate.py workbook.twbx --assess
    ```
 
-3. **Governance Report**: Executive summary for leadership
+4. **Governance Report**: Executive summary for leadership
    - Total workbooks, migration waves, estimated effort
    - Risk matrix, recommended sequence
 

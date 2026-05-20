@@ -153,6 +153,9 @@ For environments without Mermaid rendering:
 | `schema_drift.py` | Schema drift detection: compare extraction snapshots, detect added/removed/changed objects |
 | `prep_lineage.py` | Cross-flow lineage graph engine: build PrepLineageGraph from FlowProfile objects, match outputs→inputs |
 | `prep_lineage_report.py` | Lineage HTML report & merge advisor: 7-section interactive HTML, Mermaid diagram, merge recommendations |
+| `assessment.py` | Pre-migration readiness assessment: 9 categories (datasource, calculation, visual, filter, data model, interactivity, extract, scope, connection audit), pass/warn/fail scoring |
+| `server_assessment.py` | Server-level portfolio assessment: per-workbook GREEN/YELLOW/RED grading, 8-axis complexity, effort estimation, migration wave planning, HTML dashboard |
+| `global_assessment.py` | Cross-workbook global assessment: pairwise merge scoring, BFS clustering, HTML heatmap report |
 
 ### `powerbi_import/deploy/` — Fabric Deployment
 

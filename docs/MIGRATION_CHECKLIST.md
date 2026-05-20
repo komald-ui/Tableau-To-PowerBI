@@ -109,6 +109,19 @@ If you used `--batch` on `.tfl`/`.tflx` files:
 - [ ] For YELLOW/RED flows: review script nodes and manual transformation steps
 - [ ] If pairing with a workbook: use `python migrate.py workbook.twbx --prep flow.tfl`
 
+## 13. Bulk Assessment (`--bulk-assess`)
+
+If you used `--bulk-assess` on a workbook folder:
+
+- [ ] Review the portfolio readiness HTML dashboard for GREEN/YELLOW/RED grades
+- [ ] Check per-workbook effort estimates and total migration effort
+- [ ] Review migration wave assignments (Easy/Medium/Complex)
+- [ ] If present, review the cross-workbook merge heatmap for shared data patterns
+- [ ] Identify merge clusters — workbooks sharing the same data sources
+- [ ] If prep flows were found, review the prep lineage report for dependencies
+- [ ] Use wave plan to prioritize: start with Easy (GREEN) workbooks as pilots
+- [ ] For RED workbooks: review specific complexity signals before migrating
+
 ## Quick Reference
 
 | Tableau Feature | Where to Check in PBI |
