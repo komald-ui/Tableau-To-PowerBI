@@ -759,8 +759,7 @@ class TableauServerClient:
         })
 
         try:
-            resp = self._request(url, method='POST', data=payload,
-                                 skip_auth=True)
+            resp = self._request('POST', url, data=payload)
             creds = resp.get('credentials', {})
             self._auth_token = creds.get('token', '')
             site_data = creds.get('site', {})
@@ -791,7 +790,7 @@ class TableauServerClient:
         })
 
         try:
-            resp = self._request(url, method='POST', data=payload)
+            resp = self._request('POST', url, data=payload)
             return resp.get('data', {})
         except Exception as e:
             logger.error(f'Metadata GraphQL query failed: {e}')

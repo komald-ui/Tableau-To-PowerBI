@@ -1367,8 +1367,11 @@ class PowerBIProjectGenerator:
             if not source_field:
                 continue
 
-            # Resolve table for the source field
-            table_name = self._field_map.get(source_field, {}).get('table', self._main_table)
+            # Resolve table for the source field (_field_map stores tuples)
+            if source_field in self._field_map:
+                table_name, _ = self._field_map[source_field]
+            else:
+                table_name = self._main_table
 
             # 1. Hidden slicer visual
             slicer_id = uuid.uuid4().hex[:20]
