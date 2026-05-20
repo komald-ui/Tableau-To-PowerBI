@@ -1367,11 +1367,16 @@ class PowerBIProjectGenerator:
             if not source_field:
                 continue
 
-            # Resolve table for the source field (_field_map stores tuples)
-            if source_field in self._field_map:
-                table_name, _ = self._field_map[source_field]
-            else:
+            # Resolve table for the source field
+            # _field_map normally stores tuples (table, prop) but callers
+            # may also pass dicts with a 'table' key.
+            entry = self._field_map.get(source_field)
+            if entry is None:
                 table_name = self._main_table
+            elif isinstance(entry, dict):
+                table_name = entry.get('table', self._main_table)
+            else:
+                table_name = entry[0]
 
             # 1. Hidden slicer visual
             slicer_id = uuid.uuid4().hex[:20]
