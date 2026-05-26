@@ -100,7 +100,7 @@ DO NOT generate a Calendar table if an existing date table is detected.
 
 Calendar M expression uses explicit culture parameter for `Date.MonthName()` and `Date.DayOfWeekName()` — defaults to `"en-US"`, overridden by `--culture` CLI flag.
 
-## Visual Type Mapping (118 types)
+## Visual Type Mapping (190 types)
 
 Key mappings: Bar→clusteredBarChart, Line→lineChart, Pie→pieChart, Map→map, TextTable→tableEx, Treemap→treemap, Scatter→scatterChart, Combo→lineClusteredColumnComboChart
 

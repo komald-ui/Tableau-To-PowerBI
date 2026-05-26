@@ -2264,7 +2264,7 @@ def create_visual_container(worksheet, visual_id=None, x=10, y=10,
     Create a Power BI visualContainer from a converted worksheet.
 
     Supports:
-    - All 118+ visual types via VISUAL_TYPE_MAP
+    - All 190 visual types via VISUAL_TYPE_MAP + APPROXIMATION_MAP + CUSTOM_VISUAL_GUIDS
     - PBIR-native config templates
     - Slicer sync groups
     - Cross-filtering disable

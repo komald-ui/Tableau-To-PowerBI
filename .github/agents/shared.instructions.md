@@ -9,7 +9,7 @@ All agents MUST follow these rules. They apply to every file in the project.
 ## Pipeline Architecture
 
 ```
-.twbx → [Extraction] → 17 JSON files → [Generation] → .pbip (PBIR v4.0 + TMDL)
+.twbx → [Extraction] → 23 JSON files → [Generation] → .pbip (PBIR v4.0 + TMDL)
                                                       → Fabric-native (Lakehouse + Dataflow + Notebook + SemanticModel + Pipeline)
 ```
 

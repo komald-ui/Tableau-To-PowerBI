@@ -7,28 +7,29 @@ Automated migration of Tableau workbooks (.twb/.twbx) to Power BI projects (.pbi
 ## Architecture — 2-Step Pipeline
 
 ```
-.twbx --> [Extraction] --> 17 JSON files --> [Generation] --> .pbip (PBIR + TMDL)
+.twbx --> [Extraction] --> 23 JSON files --> [Generation] --> .pbip (PBIR + TMDL)
 ```
 
-1. **Extraction** (`tableau_export/`): Parses Tableau XML, extracts worksheets/dashboards/datasources/calculations/parameters/filters/stories/actions/sets/groups/bins/hierarchies/sort_orders/aliases/custom_sql
+1. **Extraction** (`tableau_export/`): Parses Tableau XML, extracts worksheets/dashboards/datasources/calculations/parameters/filters/stories/actions/sets/groups/bins/hierarchies/sort_orders/aliases/custom_sql/user_filters/hyper_files/datasource_filters/custom_geocoding/published_datasources/data_blending/table_extensions/linguistic_schema
 2. **Generation** (`powerbi_import/`): Produces the complete .pbip project (BIM → TMDL, PBIR v4.0 report, Power Query M, visuals, filters, bookmarks)
 
 ## Project Structure
 
 - **tableau_export/**: Tableau XML extraction and parsing + DAX formula conversion
-  - `extract_tableau_data.py`: Main orchestrator, parses TWB/TWBX, extracts 17 object types
+  - `extract_tableau_data.py`: Main orchestrator, parses TWB/TWBX, extracts 23 object types
   - `datasource_extractor.py`: Datasource extraction (connections, tables, columns, calculations, relationships)
-  - `dax_converter.py`: 180+ Tableau → DAX formula conversions (LOD, table calcs, security, etc.)
-  - `m_query_builder.py`: Power Query M generator (33 connector types + 43 transformation generators: rename, filter, aggregate, pivot/unpivot, join, union, sort, conditional columns — chainable via `inject_m_steps()`)
+  - `dax_converter.py`: 133 Tableau → DAX formula conversions (89 regex patterns + 44 converter functions: LOD, table calcs, security, etc.)
+  - `m_query_builder.py`: Power Query M generator (49 connector types + 43 transformation generators: rename, filter, aggregate, pivot/unpivot, join, union, sort, conditional columns — chainable via `inject_m_steps()`)
   - `prep_flow_parser.py`: Tableau Prep flow parser (.tfl/.tflx → Power Query M) — DAG traversal, Clean/Join/Aggregate/Union/Pivot steps, expression converter, merge with TWB datasources
   - `prep_flow_analyzer.py`: Per-flow metadata extraction for lineage analysis — parses individual .tfl/.tflx files and extracts FlowProfile objects (inputs, outputs, transforms with action-level detail, DAG statistics, complexity signals). Extracts 18 operation types from Clean steps (rename, filter, remove columns, calculated fields, etc.), join key columns, aggregate group-by/agg columns, script types, output columns. `analyze_flow()`, `analyze_flows_bulk()`
   - `server_client.py`: Tableau Server/Cloud REST API client — PAT/password auth, workbook download, datasource listing, batch download, regex search, context manager, paginated API fetching (`_paginated_get`), 9 new endpoints: `list_users`, `list_groups`, `list_views`, `get_workbook_connections`, `list_schedules`, `get_site_info`, `list_prep_flows`, `download_prep_flow`, `get_server_summary`, `get_workbook_extract_tasks`, `get_workbook_subscriptions`
   - `hyper_reader.py`: Hyper file data loader — 3-tier reader chain (tableauhyperapi → sqlite3 → binary header scan), schema discovery, type mapping (28 types), M expression generation (#table inline / Csv.Document), CSV export (`export_hyper_to_csv`), relationship inference (`infer_hyper_relationships`), metadata enrichment with recommendations
   - `pulse_extractor.py`: Tableau Pulse metric extractor — parses Pulse metric definitions from TWB XML (metric name, measure, time dimension, filters, goals)
+  - `safe_xml.py`: Safe XML parsing utilities — XXE-protected ElementTree parser for secure TWB/TWBX processing
 - **powerbi_import/**: Power BI project generation
   - `pbip_generator.py`: .pbip generator (PBIR v4.0, visuals, filters, bookmarks, slicers, textbox, image, pages shelf, number format conversion, drill-through pages)
   - `tmdl_generator.py`: Unified semantic model generator — direct Tableau → TMDL (tables, columns, measures, relationships, hierarchies, sets/groups/bins, parameters, RLS, dataCategory, isHidden, calculation groups, field parameters, M-based calculated columns)
-  - `visual_generator.py`: Visual container generator — 118 visual type mappings, PBIR-native config templates, data role definitions, query state builder, slicer sync groups, cross-filtering disable, action button navigation, TopN filters, sort state, reference lines, conditional formatting
+  - `visual_generator.py`: Visual container generator — 190 visual type mappings (136 VISUAL_TYPE_MAP + 16 APPROXIMATION_MAP + 38 CUSTOM_VISUAL_GUIDS), PBIR-native config templates, data role definitions, query state builder, slicer sync groups, cross-filtering disable, action button navigation, TopN filters, sort state, reference lines, conditional formatting
   - `import_to_powerbi.py`: Generation pipeline orchestrator (supports `--output-dir`, `--output-format fabric` for shared models)
   - `m_query_generator.py`: Sample data M query generator
   - `assessment.py`: Pre-migration readiness assessment — 9 categories (datasource, calculation, visual, filter, data model, interactivity, extract, scope, connection string audit), pass/warn/fail scoring
@@ -79,6 +80,29 @@ Automated migration of Tableau workbooks (.twb/.twbx) to Power BI projects (.pbi
   - `dax_recipes.py`: DAX recipe overrides — industry-specific KPI measure templates: Healthcare (6), Finance (8), Retail (7). `apply_recipes()` inject/replace/overwrite, `recipes_to_marketplace_format()` bridge
   - `model_templates.py`: Industry model templates — pre-built semantic model skeletons: Healthcare (Encounters/Patients/Providers/Facilities), Finance (Financials/Accounts/CostCenters/AR), Retail (Sales/Products/Stores/Customers). `apply_template()` merges into migrated tables
   - `geo_passthrough.py`: Shapefile/GeoJSON passthrough — `GeoExtractor` extracts .geojson/.topojson/.shp from .twbx, `build_shape_map_config()` for PBI shapeMap, `copy_to_registered_resources()`, ZIP slip protection
+  - `connection_rewriter.py`: Connection string rewriter — transforms Tableau connection strings to Power BI-compatible formats
+  - `cross_validator.py`: Cross-artifact validation — validates consistency across TMDL, PBIR, and M query outputs
+  - `cutover_manager.py`: Migration cutover orchestration — manages production cutover steps and rollback
+  - `dax_query_generator.py`: DAX query generator — produces DAX queries for validation and testing
+  - `dax_validator.py`: DAX expression validator — validates DAX syntax and semantics post-conversion
+  - `dependency_graph.py`: Artifact dependency graph — builds DAG of migration artifact dependencies
+  - `feedback_loop.py`: Migration feedback loop — collects and applies user feedback to improve conversion quality
+  - `full_lineage.py`: Full lineage tracker — end-to-end lineage from Tableau source to Power BI output
+  - `llm_client.py`: LLM integration client — optional AI-assisted DAX refinement via external LLM APIs
+  - `m_validator.py`: Power Query M validator — validates generated M expressions for syntax correctness
+  - `migration_planner.py`: Migration planning engine — generates migration plans with effort estimates and wave assignments
+  - `paginated_generator.py`: Paginated report generator — converts Tableau views to Power BI paginated report format
+  - `pdf_renderer.py`: PDF report renderer — generates PDF migration reports and visual comparisons
+  - `pptx_report.py`: PowerPoint report generator — creates .pptx migration summary presentations
+  - `preflight.py`: Preflight checks — pre-migration validation of source workbook compatibility
+  - `repair_strategies.py`: Self-healing repair strategies — automated fix patterns for common migration issues
+  - `report_packager.py`: Report packager — bundles migration artifacts and reports into distributable packages
+  - `rollback_engine.py`: Rollback engine — reverts migration changes when errors are detected
+  - `schema_validator.py`: Schema validator — validates generated TMDL/PBIR against expected schemas
+  - `self_healing_report.py`: Self-healing report — documents automated repairs applied during migration
+  - `self_healing_v3.py`: Self-healing engine v3 — advanced auto-repair for TMDL, DAX, and PBIR issues
+  - `subscription_generator.py`: Subscription generator — converts Tableau subscription configs to Power BI
+  - `subscription_migrator.py`: Subscription migrator — migrates Tableau Server subscriptions to Power BI alerts
   - `api_server.py`: REST API server — stdlib `http.server`, `POST /migrate` (multipart upload), `GET /status/{id}`, `GET /download/{id}` (ZIP), `GET /health`, `GET /jobs`. Thread-safe job store, background migration workers.
   - `schema_drift.py`: Schema drift detection — `detect_schema_drift()` compares extraction snapshots (tables, columns, calculations, worksheets, relationships, parameters, filters). `load_snapshot()`, `save_snapshot()`. JSON + summary output.
   - `prep_lineage.py`: Cross-flow lineage graph engine — builds `PrepLineageGraph` from multiple FlowProfile objects, matches outputs→inputs across flows (table_name, fingerprint, fuzzy, column overlap), detects chains, isolated flows, external sources, final sinks. Deduplicates edges via `seen` set.
@@ -96,7 +120,10 @@ Automated migration of Tableau workbooks (.twb/.twbx) to Power BI projects (.pbi
     - `pbi_deployer.py`: PBI Service deployment orchestrator — package, upload, poll, refresh, validate, `deploy_refresh_schedule()` for PBI REST API refresh config, `deploy_rolling()` for blue/green deployment with canary validation and auto-rollback, `create_workspace()`/`ensure_workspace()` for workspace provisioning, `bind_to_gateway()` for gateway binding, `deploy_and_bind()` for full deploy+gateway pipeline
     - `bundle_deployer.py`: Fabric bundle deployer — deploy shared model + thin reports as atomic bundle, artifact discovery, per-report error isolation, rebind, refresh, `BundleDeploymentResult`
     - `multi_tenant.py`: Multi-tenant deployment — `TenantConfig`/`MultiTenantConfig` (validate/load/save JSON), `_apply_connection_overrides()` (template substitution: `${TENANT_SERVER}`, `${TENANT_DATABASE}`, context-aware escaping, null byte blocking, placeholder validation), `deploy_multi_tenant()` orchestrator with per-tenant results
-- **tests/**: Unit and integration tests (7,099 tests across 141+ test files + conftest.py shared fixtures)
+    - `credential_vault.py`: Credential vault — secure credential storage and retrieval for deployment authentication
+  - `config/`: Configuration subpackage
+    - `migration_config.py`: Migration configuration — typed config objects for migration settings and feature flags
+- **tests/**: Unit and integration tests (8,668 tests across 195 test files + conftest.py shared fixtures)
 - **docs/**: FAQ, PBI project guide, mapping reference, **ROADMAP.md** (v22–v28 development roadmap per agent)
 - **.github/workflows/ci.yml**: CI/CD pipeline (lint → test → validate → deploy)
 - **.github/workflows/publish.yml**: PyPI auto-publish workflow (tag-triggered, OIDC trusted publisher)
@@ -159,6 +186,27 @@ python migrate.py --prep-lineage examples/prep_portfolio/ flow1.tfl flow2.tfl
 python migrate.py --batch examples/prep_portfolio/ --output-dir /tmp/prep_output
 python migrate.py path/to/workbook.twbx --autoplay
 python migrate.py path/to/workbook.twbx --autoplay --autoplay-open
+python migrate.py path/to/workbook.twbx --pdf --pptx --report-package
+python migrate.py path/to/workbook.twbx --config config.json
+python migrate.py path/to/workbook.twbx --incremental
+python migrate.py path/to/workbook.twbx --rollback
+python migrate.py path/to/workbook.twbx --strict
+python migrate.py path/to/workbook.twbx --llm-refine
+python migrate.py path/to/workbook.twbx --paginated
+python migrate.py path/to/workbook.twbx --governance
+python migrate.py path/to/workbook.twbx --telemetry
+python migrate.py path/to/workbook.twbx --monitor json
+python migrate.py path/to/workbook.twbx --sla-config sla.json
+python migrate.py path/to/workbook.twbx --parallel --workers 4
+python migrate.py path/to/workbook.twbx --full-lineage
+python migrate.py path/to/workbook.twbx --web-ui --web-port 8080
+python migrate.py --server https://tableau.company.com --server-discover --token-name pat --token-secret secret
+python migrate.py --server https://tableau.company.com --server-assess Marketing --token-name pat --token-secret secret
+python migrate.py --plan-migration examples/tableau_samples/ --team-size 3
+python migrate.py path/to/workbook.twbx --map-permissions
+python migrate.py path/to/workbook.twbx --cutover
+python migrate.py path/to/workbook.twbx --deploy WORKSPACE_ID --rolling --endorse promoted
+python migrate.py path/to/workbook.twbx --quiet --log-file migration.log --jsonl-log
 ```
 
 ## Standalone Prep Flow Batch Mode
@@ -183,7 +231,7 @@ Key functions:
 - `prep_lineage.build_lineage_graph()` — cross-flow lineage graph builder
 - `prep_lineage_report.compute_merge_recommendations()` — merge advisor
 
-## Extracted Objects (17 types)
+## Extracted Objects (23 types)
 
 | Type | JSON File | Description |
 |------|-----------|-------------|
@@ -204,6 +252,12 @@ Key functions:
 | custom_sql | custom_sql.json | Custom SQL queries |
 | user_filters | user_filters.json | User filters, security rules → PBI RLS roles |
 | hyper_files | hyper_files.json | Hyper file row data for M partition inlining |
+| datasource_filters | datasource_filters.json | Extract-level filters per datasource |
+| custom_geocoding | custom_geocoding.json | Custom geocoding definitions |
+| published_datasources | published_datasources.json | Published datasource references |
+| data_blending | data_blending.json | Cross-datasource blending relationships |
+| table_extensions | table_extensions.json | Table extension definitions |
+| linguistic_schema | linguistic_schema.json | Linguistic schema metadata for Q&A |
 
 ## Key Model Files
 
@@ -215,7 +269,7 @@ The DAX context is managed in `tmdl_generator.py` via dictionaries:
 - `param_values`: parameter → inline value
 - `col_metadata_map`: column name → {hidden, semantic_role, description}
 
-## Supported DAX Conversions (180+)
+## Supported DAX Conversions (133+)
 
 | Category | Tableau | DAX |
 |----------|---------|-----|
@@ -276,7 +330,9 @@ TWB-embedded transforms (column renames from captions) are auto-detected and inj
 - **Number formats**: Tableau number format patterns --> PBI formatString on measures/columns
 - **Datasource filters**: Extract-level filters --> PBI report-level filter objects
 
-## Visual Type Mapping (118 Tableau mark types)
+## Visual Type Mapping (190 Tableau mark types)
+
+136 VISUAL_TYPE_MAP entries + 16 APPROXIMATION_MAP entries + 38 CUSTOM_VISUAL_GUIDS entries.
 
 | Tableau Mark | Power BI visualType | Notes |
 |-------------|-------------------|-------|
@@ -423,7 +479,7 @@ See `docs/AGENTS.md` for the full architecture diagram, data flow, and handoff p
 | **@orchestrator** | Pipeline, CLI, batch, wizard | `migrate.py`, `import_to_powerbi.py`, `wizard.py`, `progress.py`, `api_server.py` |
 | **@extractor** | Tableau XML parsing (.twb/.twbx), Hyper files, Prep flow conversion | `extract_tableau_data.py`, `datasource_extractor.py`, `hyper_reader.py`, `pulse_extractor.py`, `prep_flow_parser.py` |
 | **@tableau** | Tableau Server/Cloud REST API, JWT auth, site discovery, permissions, metadata lineage, Prep flow analysis | `server_client.py`, `prep_flow_analyzer.py` |
-| **@dax** | DAX formula correctness, conversion (180+), optimization, aggregation context | `dax_converter.py`, `dax_optimizer.py` + DAX blocks in `tmdl_generator.py` |
+| **@dax** | DAX formula correctness, conversion (133+), optimization, aggregation context | `dax_converter.py`, `dax_optimizer.py` + DAX blocks in `tmdl_generator.py` |
 | **@wiring** | DAX↔M bridge, classification, M generation (43 transforms), M step injection | `m_query_builder.py`, `calc_column_utils.py` + M functions in `tmdl_generator.py` |
 | **@semantic** | TMDL model, relationships, Calendar, RLS, hierarchies, parameters | `tmdl_generator.py` (structural), `fabric_semantic_model_generator.py` |
 | **@visual** | PBIR v4.0, visual containers, slicers, filters, bookmarks, themes | `pbip_generator.py`, `visual_generator.py` |
@@ -433,7 +489,7 @@ See `docs/AGENTS.md` for the full architecture diagram, data flow, and handoff p
 | **@merger** | Shared semantic model, fingerprint matching | `shared_model.py`, `merge_config.py` |
 | **@deployer** | Fabric/PBI deployment, auth, gateway | `deploy/*.py`, `gateway_config.py`, `telemetry.py` |
 | **@reviewer** | Artifact quality review, preceptorship loop, coaching feedback | `preceptor.py` |
-| **@tester** | Tests (8,512), coverage, regression | `tests/*.py` |
+| **@tester** | Tests (8,668), coverage, regression | `tests/*.py` |
 
 ### Rules
 

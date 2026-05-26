@@ -154,10 +154,10 @@ def slide_title(prs):
 
     # Stats bar
     stats = [
-        ("7,099", "Tests Passed"),
-        ("180+", "DAX Conversions"),
-        ("118+", "Visual Types"),
-        ("42", "Data Connectors"),
+        ("8,668", "Tests Passed"),
+        ("133+", "DAX Conversions"),
+        ("190", "Visual Types"),
+        ("49", "Data Connectors"),
         ("100%", "Fidelity (27/27 WB)"),
     ]
     bar_left = Inches(1.0)
@@ -187,8 +187,8 @@ def slide_executive_summary(prs):
 
     layers = [
         ("📥 INPUT", "TWB / TWBX / TDS / Prep / Hyper / Server API", TABLEAU_ORANGE),
-        ("🔍 EXTRACT", "17 object types → 17 JSON intermediate files", PBI_BLUE),
-        ("🧮 CONVERT", "180+ DAX formulas • 43 M transforms • 42 connectors", PURPLE),
+        ("🔍 EXTRACT", "23 object types → 23 JSON intermediate files", PBI_BLUE),
+        ("🧮 CONVERT", "133+ DAX formulas • 43 M transforms • 49 connectors", PURPLE),
         ("⚙️ GENERATE", "TMDL semantic model • PBIR v4.0 report • themes", PBI_BLUE),
         ("🧠 OPTIMIZE", "DAX AST rewriter • Time Intelligence inject • auto-fix", TEAL),
         ("✅ VALIDATE", "QA suite • governance • lineage • comparison report", SUCCESS),
@@ -218,7 +218,7 @@ def slide_executive_summary(prs):
     optimizations = [
         ("Data Layer", "Smart M queries • incremental refresh\nconnection parameterization", PBI_BLUE),
         ("Semantic Layer", "DAX optimizer (IF→SWITCH • COALESCE)\nTime Intelligence auto-inject\nSortByColumn • displayFolder • isHidden", PURPLE),
-        ("Visual Layer", "118+ visual mappings • conditional format\ntheme extraction • responsive layout\nreference lines • tooltips", TEAL),
+        ("Visual Layer", "190 visual mappings • conditional format\ntheme extraction • responsive layout\nreference lines • tooltips", TEAL),
         ("Security Layer", "RLS roles • USERPRINCIPALNAME()\nZIP slip / XXE defense\ncredential redaction", RGBColor(0xA4, 0x26, 0x2C)),
     ]
 
@@ -289,7 +289,7 @@ def slide_pipeline(prs):
 
     # Extract
     _add_box(slide, Inches(3.8), y, box_w, box_h, PBI_BLUE,
-             "🔍 EXTRACT\nParse XML → 17 JSON\nfiles (worksheets,\ncalcs, datasources…)", 13, WHITE, bold=True)
+             "🔍 EXTRACT\nParse XML → 23 JSON\nfiles (worksheets,\ncalcs, datasources…)", 13, WHITE, bold=True)
 
     # Arrow 2
     _add_text(slide, Inches(6.4), Inches(2.5), Inches(0.8), Inches(0.5),
@@ -315,7 +315,7 @@ def slide_pipeline(prs):
 
     # Extracted objects list
     _add_text(slide, Inches(0.5), Inches(4.3), Inches(9), Inches(0.5),
-              "17 Extracted Object Types:", 16, PBI_DARK, bold=True)
+              "23 Extracted Object Types:", 16, PBI_DARK, bold=True)
     objects = [
         "worksheets • dashboards • datasources • calculations • parameters • filters",
         "stories • actions • sets • groups • bins • hierarchies • sort orders",
@@ -342,10 +342,10 @@ def slide_features(prs):
               "Key Features", 32, PBI_DARK, bold=True)
 
     features = [
-        ("🔄 Complete Extraction", "17 object types from .twb/.twbx\nPrep flows, Hyper files, Server API", PBI_BLUE),
-        ("🧮 180+ DAX Conversions", "LOD, table calcs, RANK, WINDOW\ncross-table RELATED/LOOKUPVALUE", PURPLE),
-        ("📊 118+ Visual Types", "Bar, line, map, treemap, Sankey\ncombo, gauge, word cloud, KPI", TEAL),
-        ("🔌 42 Data Connectors", "SQL Server, Snowflake, BigQuery\nDatabricks, Oracle, Excel, CSV…", PBI_BLUE),
+        ("🔄 Complete Extraction", "23 object types from .twb/.twbx\nPrep flows, Hyper files, Server API", PBI_BLUE),
+        ("🧮 133+ DAX Conversions", "LOD, table calcs, RANK, WINDOW\ncross-table RELATED/LOOKUPVALUE", PURPLE),
+        ("📊 190 Visual Types", "Bar, line, map, treemap, Sankey\ncombo, gauge, word cloud, KPI", TEAL),
+        ("🔌 49 Data Connectors", "SQL Server, Snowflake, BigQuery\nDatabricks, Oracle, Excel, CSV…", PBI_BLUE),
         ("🧠 Smart Semantic Model", "Calendar, hierarchies, calc groups\nfield params, RLS, perspectives\nM identifier auto-quoting", PURPLE),
         ("⚡ DAX Optimizer", "IF→SWITCH, COALESCE, constant\nfolding, Time Intelligence inject", TEAL),
         ("🔗 Shared Semantic Model", "Multi-WB merge, fingerprint match\nJaccard scoring, thin reports", PBI_BLUE),
@@ -381,7 +381,7 @@ def slide_dax(prs):
     slide.background.fill.fore_color.rgb = WHITE
 
     _add_text(slide, Inches(0.5), Inches(0.3), Inches(12), Inches(0.7),
-              "180+ DAX Conversions — Highlights", 32, PBI_DARK, bold=True)
+              "133+ DAX Conversions — Highlights", 32, PBI_DARK, bold=True)
 
     conversions = [
         ("LOD Fixed", "{FIXED [customer] : SUM([qty])}", "CALCULATE(SUM([qty]),\n  ALLEXCEPT('T','T'[customer]))"),

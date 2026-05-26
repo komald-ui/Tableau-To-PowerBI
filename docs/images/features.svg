@@ -33,7 +33,7 @@
     <circle cx="34" cy="36" r="16" fill="#8764B8" opacity="0.15"/>
     <circle cx="34" cy="36" r="8" fill="#8764B8" opacity="0.15" filter="url(#f-glow)"/>
     <text x="34" y="42" font-family="Segoe UI, sans-serif" font-size="17" text-anchor="middle">🧮</text>
-    <text x="60" y="30" font-family="Segoe UI, sans-serif" font-size="13" font-weight="bold" fill="white">180+ DAX</text>
+    <text x="60" y="30" font-family="Segoe UI, sans-serif" font-size="13" font-weight="bold" fill="white">133+ DAX</text>
     <text x="60" y="50" font-family="Segoe UI, sans-serif" font-size="10" fill="rgba(255,255,255,0.45)">Formula conversions</text>
   </g>
 
@@ -43,7 +43,7 @@
     <circle cx="34" cy="36" r="16" fill="#038387" opacity="0.15"/>
     <circle cx="34" cy="36" r="8" fill="#038387" opacity="0.15" filter="url(#f-glow)"/>
     <text x="34" y="42" font-family="Segoe UI, sans-serif" font-size="17" text-anchor="middle">📊</text>
-    <text x="60" y="30" font-family="Segoe UI, sans-serif" font-size="13" font-weight="bold" fill="white">118+ Visuals</text>
+    <text x="60" y="30" font-family="Segoe UI, sans-serif" font-size="13" font-weight="bold" fill="white">190 Visuals</text>
     <text x="60" y="50" font-family="Segoe UI, sans-serif" font-size="10" fill="rgba(255,255,255,0.45)">Type mappings</text>
   </g>
 
@@ -53,7 +53,7 @@
     <circle cx="34" cy="36" r="16" fill="#0078D4" opacity="0.15"/>
     <circle cx="34" cy="36" r="8" fill="#0078D4" opacity="0.15" filter="url(#f-glow)"/>
     <text x="34" y="42" font-family="Segoe UI, sans-serif" font-size="17" text-anchor="middle">🔌</text>
-    <text x="60" y="30" font-family="Segoe UI, sans-serif" font-size="13" font-weight="bold" fill="white">42 Connectors</text>
+    <text x="60" y="30" font-family="Segoe UI, sans-serif" font-size="13" font-weight="bold" fill="white">49 Connectors</text>
     <text x="60" y="50" font-family="Segoe UI, sans-serif" font-size="10" fill="rgba(255,255,255,0.45)">Power Query M</text>
   </g>
 

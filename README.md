@@ -4,12 +4,12 @@
 
 | | |
 |---|---|
-| 🏷️ **Version** | 34.0.0 |
-| ✅ **Tests** | 8,088 passed · 96.2 % coverage |
+| 🏷️ **Version** | 38.1.0 |
+| ✅ **Tests** | 8,668 passed · 96.2 % coverage |
 | 🐍 **Python** | 3.12+ · zero external dependencies |
 | 📜 **License** | MIT |
 
-| 🎯 **Capabilities** | 180+ DAX conversions · 128+ visual types · 79 connectors · 20 object types |
+| 🎯 **Capabilities** | 133+ DAX conversions · 190 visual types · 49 connectors · 23 object types |
 
 ---
 
@@ -119,15 +119,15 @@ python migrate.py --batch examples/prep_portfolio/ --output-dir /tmp/prep_output
 <td width="50%">
 
 ### 🔄 Complete Extraction
-Parses **20 object types** from `.twb`/`.twbx`:
-datasources, calculations, worksheets, dashboards, filters, parameters, stories, actions, sets, groups, bins, hierarchies, relationships, sort orders, aliases, custom SQL, custom geocoding, published datasources, data blending, hyper metadata
+Parses **23 object types** from `.twb`/`.twbx`:
+datasources, calculations, worksheets, dashboards, filters, parameters, stories, actions, sets, groups, bins, hierarchies, relationships, sort orders, aliases, custom SQL, custom geocoding, published datasources, data blending, hyper metadata, datasource filters, table extensions, linguistic schema
 
 **Hyper extract data:** `.hyper` files embedded in `.twbx` are automatically converted to CSV and wired into Power Query M expressions via a 3-tier reader chain (`tableauhyperapi` → SQLite → binary scan). Small extracts are inlined directly into `#table()` M partitions; large extracts produce `Csv.Document()` references. Legacy `.tde` files require the `tableauhyperapi` package.
 
 </td>
 <td width="50%">
 
-### 🧮 180+ DAX Conversions
+### 🧮 133+ DAX Conversions
 Translates Tableau formulas to DAX:
 LOD expressions, table calcs, IF/ELSEIF, ISNULL, CONTAINS, window functions, iterators (SUMX), cross-table RELATED/LOOKUPVALUE, RLS security, regex patterns, SPLIT, statistical functions
 
@@ -136,7 +136,7 @@ LOD expressions, table calcs, IF/ELSEIF, ISNULL, CONTAINS, window functions, ite
 <tr>
 <td>
 
-### 📊 128+ Visual Types
+### 📊 190 Visual Types
 Maps every Tableau mark to Power BI:
 bar, line, pie, scatter, map, treemap, waterfall, funnel, gauge, KPI, box plot, word cloud, Sankey, Chord, combo charts, sparklines, and more
 
@@ -210,7 +210,7 @@ Merge multiple Tableau workbooks into **one shared semantic model** with thin re
 
 ```mermaid
 flowchart LR
-    A["📄 .twbx/.twb\nTableau Workbook"] --> B["🔍 EXTRACT\n17 JSON files"]
+    A["📄 .twbx/.twb\nTableau Workbook"] --> B["🔍 EXTRACT\n23 JSON files"]
     P["📋 .tfl/.tflx\nPrep Flow"] -.-> B
     S["☁️ Tableau Server\n(optional)"] -.-> B
     B --> C["🛠️ GENERATE\n.pbip project"]
@@ -229,7 +229,7 @@ flowchart LR
     style F fill:#0078D4,color:#fff,stroke:#0078D4
 ```
 
-**🔍 Step 1 — Extract:** Parses Tableau XML into 17 structured JSON files (worksheets, datasources, calculations, etc.)
+**🔍 Step 1 — Extract:** Parses Tableau XML into 23 structured JSON files (worksheets, datasources, calculations, etc.)
 
 **🛠️ Step 2 — Generate:** Converts JSON into a complete `.pbip` project with PBIR v4.0 report and TMDL semantic model
 
@@ -241,7 +241,7 @@ Use `--output-format fabric` to generate a **full Microsoft Fabric project** ins
 
 ```mermaid
 flowchart LR
-    A["📄 .twbx/.twb\nTableau Workbook"] --> B["🔍 EXTRACT\n17 JSON files"]
+    A["📄 .twbx/.twb\nTableau Workbook"] --> B["🔍 EXTRACT\n23 JSON files"]
     B --> C["⚙️ GENERATE\nFabric artifacts"]
     C --> LH["🗄️ Lakehouse\nDelta tables + DDL"]
     C --> DF["🔄 Dataflow Gen2\nPower Query M"]
@@ -618,10 +618,10 @@ SharedSales/
 TableauToPowerBI/
 ├── migrate.py                                 # CLI entry point (30+ flags)
 ├── tableau_export/                            # Tableau extraction
-│   ├── extract_tableau_data.py                #   TWB/TWBX parser (17 object types)
+│   ├── extract_tableau_data.py                #   TWB/TWBX parser (23 object types)
 │   ├── datasource_extractor.py                #   Connection/table/calc extractor
-│   ├── dax_converter.py                       #   180+ DAX formula conversions
-│   ├── m_query_builder.py                     #   79 connectors + 43 transforms
+│   ├── dax_converter.py                       #   133+ DAX formula conversions
+│   ├── m_query_builder.py                     #   49 connectors + 43 transforms
 │   ├── prep_flow_parser.py                    #   Tableau Prep flow parser
 │   ├── prep_flow_analyzer.py                  #   Prep flow profiler & assessment
 │   ├── hyper_reader.py                        #   .hyper file data loader
@@ -630,7 +630,7 @@ TableauToPowerBI/
 ├── powerbi_import/                            # Power BI generation
 │   ├── import_to_powerbi.py                   #   Orchestrator
 │   ├── pbip_generator.py                      #   .pbip project + visuals + filters
-│   ├── visual_generator.py                    #   128+ visual types, PBIR configs
+│   ├── visual_generator.py                    #   190 visual types, PBIR configs
 │   ├── tmdl_generator.py                      #   Semantic model → TMDL
 │   ├── dax_optimizer.py                       #   DAX AST optimizer (v25)
 │   ├── assessment.py                          #   Pre-migration assessment
@@ -652,7 +652,7 @@ TableauToPowerBI/
 │   ├── schema_drift.py                        #   Schema drift detection (v28)
 │   └── deploy/                                #   Deploy to PBI Service / Fabric
 ├── Dockerfile                                 # Docker image for API server
-├── tests/                                     # 8,088 tests across 141+ files
+├── tests/                                     # 8,668 tests across 195 files
 ├── docs/                                      # 18 documentation files
 └── examples/                                  # Sample Tableau workbooks
 ```
@@ -835,7 +835,7 @@ python -m pytest tests/ --cov --cov-report=html      # Coverage report
 | `test_extract_coverage.py` | 75 | Stories, actions, sets, bins, hierarchies |
 | `test_new_features.py` | 74 | Calc groups, field params, M columns |
 | `test_v5_features.py` | 72 | v5.x features |
-| `test_visual_generator.py` | 65 | 118+ visual types, sync, buttons |
+| `test_visual_generator.py` | 65 | 190 visual types, sync, buttons |
 | `test_non_regression.py` | 63 | End-to-end sample workbook migrations |
 | `test_prep_flow_parser.py` | 58 | Prep parsing, DAG, step conversion |
 | `test_assessment.py` | 55 | Pre-migration (8 categories) |
@@ -847,7 +847,7 @@ python -m pytest tests/ --cov --cov-report=html      # Coverage report
 
 ```mermaid
 flowchart LR
-    L["🔍 Lint\nflake8 + ruff"] --> T["🧪 Test\n7,099 tests\nPy 3.9–3.14"]
+    L["🔍 Lint\nflake8 + ruff"] --> T["🧪 Test\n8,668 tests\nPy 3.9–3.14"]
     T --> V["✅ Validate\nStrict .twbx\nmigrations"]
     V --> S["📦 Staging\nFabric deploy"]
     S --> P["🚀 Production\nManual approval"]
@@ -878,7 +878,7 @@ The report shows for each migrated workbook:
 |----------|-------------|
 | 📖 [Migration Checklist](docs/MIGRATION_CHECKLIST.md) | Step-by-step migration guide |
 | 🗺️ [Mapping Reference](docs/MAPPING_REFERENCE.md) | Tableau → Power BI mappings |
-| 🔢 [180+ DAX Functions](docs/TABLEAU_TO_DAX_REFERENCE.md) | Complete formula reference |
+| 🔢 [133+ DAX Functions](docs/TABLEAU_TO_DAX_REFERENCE.md) | Complete formula reference |
 | ⚡ [108 Power Query M](docs/TABLEAU_TO_POWERQUERY_REFERENCE.md) | Property reference |
 | 🔄 [165 Prep → M](docs/TABLEAU_PREP_TO_POWERQUERY_REFERENCE.md) | Prep transformation reference |
 | 📋 Prep Flow Lineage | Cross-flow lineage, Power Query M export, merge recommendations (`--batch` / `--prep-lineage`) |

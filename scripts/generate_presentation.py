@@ -200,13 +200,14 @@ def build_presentation():
     # 3 value prop cards
     _add_card(slide, Inches(1.1), Inches(4.2), Inches(3.4), Inches(2.2),
               '🔍  Automated Extraction',
-              '17 object types extracted from Tableau XML: worksheets, dashboards, datasources, '
+              '23 object types extracted from Tableau XML: worksheets, dashboards, datasources, '
               'calculations, parameters, filters, stories, actions, sets, groups, bins, hierarchies, '
-              'sort orders, aliases, custom SQL, user filters, hyper files.',
+              'sort orders, aliases, custom SQL, user filters, hyper files, datasource filters, '
+              'table extensions, linguistic schema.',
               TABLEAU_ORANGE)
     _add_card(slide, Inches(4.9), Inches(4.2), Inches(3.4), Inches(2.2),
               '⚙️  Smart Generation',
-              '180+ DAX formula conversions, 118 visual type mappings, 43 Power Query M transforms, '
+              '133+ DAX formula conversions, 190 visual type mappings, 43 Power Query M transforms, '
               'auto-Calendar table, RLS roles, hierarchies, themes, conditional formatting.',
               AZURE_BLUE)
     _add_card(slide, Inches(8.7), Inches(4.2), Inches(3.4), Inches(2.2),
@@ -223,17 +224,17 @@ def build_presentation():
     _add_textbox(slide, Inches(0.8), Inches(0.4), Inches(8), Inches(0.7),
                  '2-Step Pipeline Architecture', font_size=32, bold=True, color=DARK_TEXT)
     _add_textbox(slide, Inches(0.8), Inches(1.0), Inches(10), Inches(0.5),
-                 '.twbx → [Extraction] → 17 JSON files → [Generation] → .pbip (PBIR + TMDL)',
+                 '.twbx → [Extraction] → 23 JSON files → [Generation] → .pbip (PBIR + TMDL)',
                  font_size=16, color=MID_GRAY, font_name='Cascadia Code')
 
     # Step 1 box
     _add_card(slide, Inches(0.6), Inches(1.8), Inches(5.5), Inches(4.8),
               'Step 1 — EXTRACT  (tableau_export/)',
-              'Parses Tableau XML into 17 intermediate JSON files.\n\n'
+              'Parses Tableau XML into 23 intermediate JSON files.\n\n'
               '• extract_tableau_data.py — main orchestrator\n'
               '• datasource_extractor.py — connections, tables, columns\n'
-              '• dax_converter.py — 180+ formula conversions\n'
-              '• m_query_builder.py — 33 connectors + 43 transforms\n'
+              '• dax_converter.py — 133+ formula conversions\n'
+              '• m_query_builder.py — 49 connectors + 43 transforms\n'
               '• hyper_reader.py — .hyper file data loader\n'
               '• prep_flow_parser.py — Tableau Prep flows\n'
               '• server_client.py — Tableau Server REST API\n'
@@ -250,7 +251,7 @@ def build_presentation():
               'Converts JSON into a complete .pbip project.\n\n'
               '• tmdl_generator.py — TMDL semantic model\n'
               '• pbip_generator.py — .pbip project structure\n'
-              '• visual_generator.py — 118 visual type mappings\n'
+              '• visual_generator.py — 190 visual type mappings\n'
               '• api_server.py — REST API server\n'
               '• schema_drift.py — drift detection\n'
               '• assessment.py — readiness scoring\n'
@@ -565,9 +566,9 @@ def build_presentation():
 
     # Flow diagram as text
     _add_code_box(slide, Inches(0.8), Inches(1.7), Inches(11.5), Inches(2.0),
-                  '  Workbook A ──→ Extract ──→ 17 JSON (A)  ──┐\n'
-                  '  Workbook B ──→ Extract ──→ 17 JSON (B)  ──┤── MERGE ──→ Shared SemanticModel\n'
-                  '  Workbook C ──→ Extract ──→ 17 JSON (C)  ──┘       ├──→ Thin Report A\n'
+                  '  Workbook A ──→ Extract ──→ 23 JSON (A)  ──┐\n'
+                  '  Workbook B ──→ Extract ──→ 23 JSON (B)  ──┤── MERGE ──→ Shared SemanticModel\n'
+                  '  Workbook C ──→ Extract ──→ 23 JSON (C)  ──┘       ├──→ Thin Report A\n'
                   '                                                     ├──→ Thin Report B\n'
                   '                                                     └──→ Thin Report C')
 
@@ -676,12 +677,12 @@ def build_presentation():
                  'By the Numbers', font_size=36, bold=True, color=WHITE)
 
     stats = [
-        ('180+', 'DAX\nConversions', TABLEAU_ORANGE),
-        ('118', 'Visual Type\nMappings', PBI_YELLOW),
+        ('133+', 'DAX\nConversions', TABLEAU_ORANGE),
+        ('190', 'Visual Type\nMappings', PBI_YELLOW),
         ('43', 'M Query\nTransforms', AZURE_BLUE),
-        ('33', 'Data Source\nConnectors', GREEN),
-        ('17', 'Extracted\nObject Types', ACCENT_PURPLE),
-        ('6,818+', 'Automated\nTests', RGBColor(0xEF, 0x44, 0x44)),
+        ('49', 'Data Source\nConnectors', GREEN),
+        ('23', 'Extracted\nObject Types', ACCENT_PURPLE),
+        ('8,668', 'Automated\nTests', RGBColor(0xEF, 0x44, 0x44)),
     ]
     for i, (num, label, color) in enumerate(stats):
         x = Inches(0.7) + Inches(i * 2.1)
@@ -760,7 +761,7 @@ def build_presentation():
                  'python migrate.py workbook.twbx', font_size=20,
                  color=PBI_YELLOW, alignment=PP_ALIGN.CENTER, font_name='Cascadia Code')
     _add_textbox(slide, Inches(1), Inches(5.5), Inches(11), Inches(0.4),
-                 'v28.1.1 · 6,818+ tests · 180+ DAX conversions · 118 visual mappings',
+                 'v38.1.0 · 8,668 tests · 133+ DAX conversions · 190 visual mappings',
                  font_size=14, color=MID_GRAY, alignment=PP_ALIGN.CENTER)
 
     # ── Save ──

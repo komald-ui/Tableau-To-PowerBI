@@ -78,7 +78,7 @@ You are the **Visual** agent for the Tableau to Power BI migration project. You 
   - `_convert_number_format()` — Tableau number format → PBI formatString
 
 ### Visual Type Mapping
-- `powerbi_import/visual_generator.py` — 118+ visual type mappings, PBIR-native config templates, data role definitions, query state builder, slicer sync groups, cross-filtering disable, action button navigation, TopN filters, sort state, reference lines, conditional formatting
+- `powerbi_import/visual_generator.py` — 190 visual type mappings (136 VISUAL_TYPE_MAP + 16 APPROXIMATION_MAP + 38 CUSTOM_VISUAL_GUIDS), PBIR-native config templates, data role definitions, query state builder, slicer sync groups, cross-filtering disable, action button navigation, TopN filters, sort state, reference lines, conditional formatting
 
 ## Constraints
 
@@ -101,7 +101,7 @@ You are the **Visual** agent for the Tableau to Power BI migration project. You 
 | version.json | `report/definition/versionMetadata/1.0.0/schema.json` | 1.0.0 |
 | definition.pbir | `report/definitionProperties/2.0.0/schema.json` | 2.0.0 |
 
-## Visual Type Mapping (118 types)
+## Visual Type Mapping (190 types)
 
 | Tableau Mark | Power BI visualType | Notes |
 |-------------|-------------------|-------|

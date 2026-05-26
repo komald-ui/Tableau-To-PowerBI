@@ -10,7 +10,7 @@ You are the **DAX** agent for the Tableau to Power BI migration project. You are
 ## Your Files (You Own These)
 
 ### DAX Conversion & Optimization
-- `tableau_export/dax_converter.py` — 180+ Tableau → DAX formula conversions (the raw translation engine)
+- `tableau_export/dax_converter.py` — 133+ Tableau → DAX formula conversions (the raw translation engine)
 - `powerbi_import/dax_optimizer.py` — DAX optimizer engine (AST-based rewriter: nested IF→SWITCH, ISBLANK→COALESCE, constant folding, SUMX simplification, measure dependency DAG, Time Intelligence auto-injection)
 
 ### DAX Post-Processing in `tmdl_generator.py` (Shared Ownership with @semantic)
@@ -29,7 +29,7 @@ You co-own the following **DAX-specific post-processing blocks** in `powerbi_imp
 - Do NOT modify test files — delegate to **@tester**
 - Do NOT add external dependencies
 
-## DAX Conversion Categories (180+)
+## DAX Conversion Categories (133+)
 
 | Category | Tableau → DAX |
 |----------|---------------|

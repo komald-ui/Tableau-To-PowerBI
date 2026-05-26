@@ -282,7 +282,7 @@ and **test coverage hardening**. Every sprint ships code, tests, and docs.
 
 **Baseline (post v32.2.0 / Sprint 150):**
 - 8,008+ tests, 96%+ coverage
-- 118 visual type mappings, 33 connectors, 180+ DAX conversions
+- 190 visual type mappings, 49 connectors, 133+ DAX conversions
 - Zero-Error infrastructure (10-phase defence stack) fully operational
 - Fabric-native output operational (Lakehouse + Dataflow + Notebook + Pipeline)
 
@@ -398,11 +398,11 @@ metadata → PBI M query parameters + gateway config).
 
 | # | Item | Owner | File(s) | Details |
 |---|------|-------|---------|---------|
-| 156.1 | **Connection string parser** | @wiring | new `powerbi_import/connection_rewriter.py` | Parse Tableau connection XML → structured `ConnectionInfo` (server, port, database, schema, auth_type, ssl, warehouse for Snowflake, project for BigQuery). Support all 42 connectors. |
+| 156.1 | **Connection string parser** | @wiring | new `powerbi_import/connection_rewriter.py` | Parse Tableau connection XML → structured `ConnectionInfo` (server, port, database, schema, auth_type, ssl, warehouse for Snowflake, project for BigQuery). Support all 49 connectors. |
 | 156.2 | **Environment-based rewriting** | @wiring | `connection_rewriter.py` | Config-driven server name replacement: `--connection-map mapping.json` → rewrite `prod-tableau-db.corp` to `prod-pbi-db.corp` in all M queries. |
 | 156.3 | **Gateway config depth** | @deployer | `gateway_config.py` | Full on-premises data gateway config: connection type, server, database, auth method, encrypted credential placeholder. Generate PowerShell for `Set-DataGatewayCluster` binding. |
 | 156.4 | **OAuth template generation** | @deployer | `gateway_config.py` | Per-connector OAuth redirect template: Google Sheets (GCS OAuth), Salesforce (SF OAuth), Snowflake (SSO), Databricks (PAT/OAuth). |
-| 156.5 | **Connection drift reporting** | @assessor | `schema_drift.py` | Extend `detect_connection_drift()` to cover all 42 connector types with connector-specific field comparison (e.g., Snowflake warehouse/role, BigQuery billing project). |
+| 156.5 | **Connection drift reporting** | @assessor | `schema_drift.py` | Extend `detect_connection_drift()` to cover all 49 connector types with connector-specific field comparison (e.g., Snowflake warehouse/role, BigQuery billing project). |
 | 156.6 | **Tests** | @tester | `tests/test_connection_rewriter.py` | 45+ tests: parse all connector types, rewriting rules, gateway scripts, OAuth templates, drift detection. |
 
 ---
@@ -698,7 +698,7 @@ harden edge-case handling, and automate quality gates in CI.
 
 **Baseline (post v35.0.0 / Sprint 174):**
 - 8,222 tests passing, 96.2 % coverage
-- 126 visual type mappings, 42 connector types, 180+ DAX conversions
+- 190 visual type mappings, 49 connector types, 133+ DAX conversions
 - 27 Tableau Server API endpoints
 - 85 self-healing healers (51 v3 model + 13 semantic model + 21 report)
 - 0 known regressions on bug-bash corpus

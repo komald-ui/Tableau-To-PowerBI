@@ -143,13 +143,13 @@ The original 8-agent model had two overloaded agents:
 ### @visual — Report Visual Specialist
 - Owns: `pbip_generator.py` (report parts: pages, visuals, slicers, filters, bookmarks, layout, formatting)
 - Owns: `visual_generator.py`
-- Expertise: PBIR v4.0 schema, visual type mapping (118+), slicer configuration, filter levels
+- Expertise: PBIR v4.0 schema, visual type mapping (190), slicer configuration, filter levels
 
 ## Data Flow
 
 ```
 1. Orchestrator receives CLI command (migrate.py)
-2. Orchestrator delegates to Extractor → 17 JSON files
+2. Orchestrator delegates to Extractor → 23 JSON files
 3. Orchestrator delegates to conversion:
    a. @dax converts Tableau formulas → DAX expressions
    b. @wiring classifies measure vs calc column, builds M queries

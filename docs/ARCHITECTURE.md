@@ -23,7 +23,7 @@ flowchart LR
         PFP["prep_flow_parser.py<br/>PrepFlowParser"]
     end
 
-    subgraph "Intermediate JSON (17 files)"
+    subgraph "Intermediate JSON (23 files)"
         JSON["worksheets.json<br/>dashboards.json<br/>datasources.json<br/>calculations.json<br/>parameters.json<br/>filters.json<br/>stories.json<br/>actions.json<br/>sets.json<br/>groups.json<br/>bins.json<br/>hierarchies.json<br/>sort_orders.json<br/>aliases.json<br/>custom_sql.json<br/>user_filters.json"]
     end
 
@@ -75,14 +75,14 @@ For environments without Mermaid rendering:
               |    +-- dax_converter.py        |
               |        172+ DAX conversions    |
               |    +-- m_query_builder.py      |
-              |        33 connectors           |
+              |        49 connectors           |
               |        43 transforms           |
               |    +-- prep_flow_parser.py     |
               +---------------+---------------+
                               |
                               v
               +-------------------------------+
-              |      17 INTERMEDIATE JSON     |
+              |      23 INTERMEDIATE JSON     |
               |                               |
               |  worksheets    calculations   |
               |  dashboards    parameters     |
@@ -106,7 +106,7 @@ For environments without Mermaid rendering:
               |        tables, columns,       |
               |        measures, RLS roles    |
               |    +-- visual_generator.py     |
-              |        118+ visual types       |
+              |        190 visual types        |
               |    +-- validator.py            |
               |        JSON + TMDL + DAX      |
               +---------------+---------------+
@@ -127,10 +127,10 @@ For environments without Mermaid rendering:
 
 | Module | Responsibility |
 |--------|---------------|
-| `extract_tableau_data.py` | Main orchestrator — parses TWB/TWBX XML, extracts 17 object types |
+| `extract_tableau_data.py` | Main orchestrator — parses TWB/TWBX XML, extracts 23 object types |
 | `datasource_extractor.py` | Datasource extraction (connections, tables, columns, calculations, relationships) |
-| `dax_converter.py` | 180+ Tableau → DAX formula conversions (LOD, table calcs, security, etc.) |
-| `m_query_builder.py` | Power Query M generator (33 connector types + 43 transformation generators) |
+| `dax_converter.py` | 133+ Tableau → DAX formula conversions (LOD, table calcs, security, etc.) |
+| `m_query_builder.py` | Power Query M generator (49 connector types + 43 transformation generators) |
 | `prep_flow_parser.py` | Tableau Prep flow parser (.tfl/.tflx → Power Query M) |
 | `prep_flow_analyzer.py` | Prep flow profiler — FlowProfile (inputs, outputs, transforms, M queries, assessment), 18 operation types |
 | `server_client.py` | Tableau Server/Cloud REST API client (PAT/password auth, download, batch) |
@@ -142,7 +142,7 @@ For environments without Mermaid rendering:
 | `import_to_powerbi.py` | Generation pipeline orchestrator |
 | `pbip_generator.py` | .pbip project generator (PBIR v4.0 report, visuals, filters, bookmarks, slicers) |
 | `tmdl_generator.py` | Unified semantic model generator (TMDL: tables, columns, measures, relationships) |
-| `visual_generator.py` | Visual container generator (118+ visual types, data roles, config templates) |
+| `visual_generator.py` | Visual container generator (190 visual types, data roles, config templates) |
 | `m_query_generator.py` | Sample data M query generator |
 | `validator.py` | Artifact validator (JSON, TMDL, DAX semantic validation) |
 | `migration_report.py` | Per-item fidelity tracking and migration status reporting |
@@ -173,7 +173,7 @@ For environments without Mermaid rendering:
 ### Step 1: Extraction
 
 ```
-Tableau XML → ET.parse → 17 extract_*() methods → 17 JSON files
+Tableau XML → ET.parse → 23 extract_*() methods → 23 JSON files
                                     ↓
                         datasource_extractor.py
                           (connections, tables, columns, joins)
@@ -188,7 +188,7 @@ Tableau XML → ET.parse → 17 extract_*() methods → 17 JSON files
 ### Step 2: Generation
 
 ```
-17 JSON files → PowerBIImporter.import_all()
+23 JSON files → PowerBIImporter.import_all()
                         ↓
               PBIPGenerator.generate_project()
               ├── create_report_structure()     → .pbip, .platform, definition.pbir
@@ -310,9 +310,9 @@ The semantic model is built in 14 sequential phases:
 When using `--shared-model`, the pipeline extends with a merge step:
 
 ```
-  Workbook A ──→ Extract A ──→ 17 JSON files (A)  ──┐
-  Workbook B ──→ Extract B ──→ 17 JSON files (B)  ──┤── MERGE ──→ Shared SemanticModel
-  Workbook C ──→ Extract C ──→ 17 JSON files (C)  ──┘       ├──→ Thin Report A
+  Workbook A ──→ Extract A ──→ 23 JSON files (A)  ──┐
+  Workbook B ──→ Extract B ──→ 23 JSON files (B)  ──┤── MERGE ──→ Shared SemanticModel
+  Workbook C ──→ Extract C ──→ 23 JSON files (C)  ──┘       ├──→ Thin Report A
                                                               ├──→ Thin Report B
                                                               └──→ Thin Report C
 ```

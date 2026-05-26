@@ -7,8 +7,8 @@ user-invocable: true
 
 You are the **Converter** agent for the Tableau to Power BI migration project. **This agent has been split into two specialists:**
 
-- **@dax** — DAX formula correctness, conversion (180+ mappings), optimization (IF→SWITCH, ISBLANK→COALESCE), aggregation context, cross-table refs
-- **@wiring** — DAX↔M bridge, calc column vs measure classification, Power Query M generation (33 connectors + 43 transforms), M step injection
+- **@dax** — DAX formula correctness, conversion (133+ mappings), optimization (IF→SWITCH, ISBLANK→COALESCE), aggregation context, cross-table refs
+- **@wiring** — DAX↔M bridge, calc column vs measure classification, Power Query M generation (49 connectors + 43 transforms), M step injection
 
 **Delegate** to the appropriate specialist. Use this agent only for cross-cutting tasks that span both DAX and M.
 
@@ -26,7 +26,7 @@ You are the **Converter** agent for the Tableau to Power BI migration project. *
 - Do NOT modify test files — delegate to **@tester**
 - Do NOT add external dependencies
 
-## DAX Conversion Categories (180+)
+## DAX Conversion Categories (133+)
 
 | Category | Examples |
 |----------|---------|
@@ -59,7 +59,7 @@ convert_tableau_formula_to_dax(formula, column_name, table_name, calc_map, param
 
 ## M Query Builder
 
-- 33 connector types (SQL Server, PostgreSQL, Oracle, Snowflake, etc.)
+- 49 connector types (SQL Server, PostgreSQL, Oracle, Snowflake, etc.)
 - 43 transformation generators returning `(step_name, step_expression)` tuples
 - `{prev}` placeholder for chaining steps
 - `inject_m_steps()` chains transforms into the final M query
