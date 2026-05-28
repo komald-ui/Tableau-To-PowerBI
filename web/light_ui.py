@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import queue
 import re
+import json
 import subprocess
 import sys
 import tempfile
@@ -36,6 +37,7 @@ class LightMigrationUI:
 
         self.repo_root = Path(__file__).resolve().parents[1]
         self.migrate_script = self.repo_root / "migrate.py"
+        self.settings_path = self.repo_root / ".light_ui_settings.json"
 
         self.mode_var = tk.StringVar(value="batch")
         self.preset_var = tk.StringVar(value="Migrate")
@@ -87,11 +89,88 @@ class LightMigrationUI:
         self._active_context: dict[str, object] = {}
         self._session_records: list[dict[str, object]] = []
 
+        self._load_settings()
+
         self._set_app_icon()
         self._configure_theme()
         self._build_ui()
+        self._bind_shortcuts()
         self.root.bind("<Configure>", self._on_window_resize)
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self._poll_log_queue()
+
+    def _bind_shortcuts(self) -> None:
+        self.root.bind_all("<Control-r>", self._shortcut_run)
+        self.root.bind_all("<Escape>", self._shortcut_stop)
+        self.root.bind_all("<Control-l>", self._shortcut_clear_logs)
+
+    def _shortcut_run(self, _event: tk.Event) -> str:
+        self._start_run()
+        return "break"
+
+    def _shortcut_stop(self, _event: tk.Event) -> str:
+        if self._running:
+            self._stop_run()
+        return "break"
+
+    def _shortcut_clear_logs(self, _event: tk.Event) -> str:
+        self._clear_logs()
+        return "break"
+
+    def _on_close(self) -> None:
+        self._save_settings()
+        self.root.destroy()
+
+    def _load_settings(self) -> None:
+        if not self.settings_path.exists():
+            return
+        try:
+            data = json.loads(self.settings_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return
+
+        source = data.get("source")
+        output = data.get("output")
+        preset = data.get("preset")
+        verbose = data.get("verbose")
+        notify = data.get("notify")
+        auto_open = data.get("auto_open_report")
+        compact = data.get("compact_mode")
+        kpi_only = data.get("kpi_only")
+
+        if isinstance(source, str):
+            self.source_var.set(source)
+        if isinstance(output, str) and output.strip():
+            self.output_var.set(output)
+        if preset in {"Assess", "Migrate", "Lineage"}:
+            self.preset_var.set(preset)
+        if isinstance(verbose, bool):
+            self.verbose_var.set(verbose)
+        if isinstance(notify, bool):
+            self.notify_var.set(notify)
+        if isinstance(auto_open, bool):
+            self.auto_open_report_var.set(auto_open)
+        if isinstance(compact, bool):
+            self._compact_mode = compact
+        if isinstance(kpi_only, bool):
+            self._kpi_only = kpi_only
+
+    def _save_settings(self) -> None:
+        data = {
+            "source": self.source_var.get().strip(),
+            "output": self.output_var.get().strip(),
+            "preset": self.preset_var.get(),
+            "verbose": self.verbose_var.get(),
+            "notify": self.notify_var.get(),
+            "auto_open_report": self.auto_open_report_var.get(),
+            "compact_mode": self._compact_mode,
+            "kpi_only": self._kpi_only,
+        }
+        try:
+            self.settings_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        except OSError:
+            # Keep UI responsive even if settings file cannot be written.
+            return
 
     def _configure_theme(self) -> None:
         style = ttk.Style(self.root)
@@ -483,6 +562,10 @@ class LightMigrationUI:
         self.mode_var.trace_add("write", lambda *_: self._update_option_states())
         self._update_option_states()
         self._apply_preset()
+        if self._compact_mode:
+            self._toggle_compact_mode()
+        if self._kpi_only:
+            self._toggle_kpi_only()
 
     def _set_task(self, task: str) -> None:
         self.preset_var.set(task)
@@ -766,6 +849,7 @@ class LightMigrationUI:
         self._start_execution(context)
 
     def _start_execution(self, context: dict[str, object]) -> None:
+        self._save_settings()
         self._running = True
         self._stop_requested = False
         self._active_context = context
