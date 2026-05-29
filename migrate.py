@@ -4082,6 +4082,7 @@ def run_global_assessment_mode(args):
             for wb_name, converted in zip(workbook_names, all_converted):
                 datasources = converted.get('datasources', []) or []
                 worksheets = converted.get('worksheets', []) or []
+                dashboards = converted.get('dashboards', []) or []
                 calculations = converted.get('calculations', []) or []
 
                 calc_names = {
@@ -4140,6 +4141,7 @@ def run_global_assessment_mode(args):
                         'measures': len(calc_names),
                     },
                     'generated_output': {
+                        'pages': len(dashboards) or len(worksheets),
                         'visuals': len(visual_details),
                     },
                     'dax_measure_names': sorted(calc_names),
@@ -4590,6 +4592,7 @@ def _run_assessment_mode(args, results):
             from generate_report import _build_report_summary_rows, _write_summary_csv
 
             worksheets = extracted.get('worksheets', []) or []
+            dashboards = extracted.get('dashboards', []) or []
             calculations = extracted.get('calculations', []) or []
             datasources = extracted.get('datasources', []) or []
             def _norm_name(value):
@@ -4662,6 +4665,7 @@ def _run_assessment_mode(args, results):
                         'measures': len(calc_names),
                     },
                     'generated_output': {
+                        'pages': len(dashboards) or len(worksheets),
                         'visuals': len(visual_details),
                     },
                     'dax_measure_names': sorted(calc_names),

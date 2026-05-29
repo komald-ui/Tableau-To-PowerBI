@@ -376,7 +376,8 @@ class TestReportSummaryCsv:
             assert row['sources_count'] == '2'
             assert row['tables_count'] == '4'
             assert row['measures_count'] == '6'
-            assert row['visuals_count'] == '2'
+            assert row['pages_count'] == '1'
+            assert row['visuals_count'] == '5'
             assert row['visuals_with_values_count'] == '2'
             assert row['visuals_with_dax_measures_count'] == '2'
 
@@ -392,7 +393,7 @@ class TestReportSummaryCsv:
             wb2_meta = os.path.join(wb2_dir, 'migration_metadata.json')
             with open(wb1_meta, 'w', encoding='utf-8') as f:
                 json.dump({
-                    'objects_converted': {'datasources': 1},
+                    'objects_converted': {'datasources': 1, 'dashboards': 2},
                     'tmdl_stats': {'tables': 2, 'measures': 3},
                     'generated_output': {'visuals': 2},
                     'dax_measure_names': ['M'],
@@ -403,7 +404,7 @@ class TestReportSummaryCsv:
                 }, f)
             with open(wb2_meta, 'w', encoding='utf-8') as f:
                 json.dump({
-                    'objects_converted': {'datasources': 3},
+                    'objects_converted': {'datasources': 3, 'dashboards': 1},
                     'tmdl_stats': {'tables': 5, 'measures': 8},
                     'generated_output': {'visuals': 4},
                     'dax_measure_names': [],
@@ -426,12 +427,14 @@ class TestReportSummaryCsv:
                 rows = {r['artifact_name']: r for r in csv.DictReader(fh)}
 
             assert set(rows.keys()) == {'WB1', 'WB2'}
-            assert rows['WB1']['visuals_count'] == '1'
+            assert rows['WB1']['visuals_count'] == '2'
             assert rows['WB1']['visuals_with_values_count'] == '1'
             assert rows['WB1']['visuals_with_dax_measures_count'] == '1'
-            assert rows['WB2']['visuals_count'] == '0'
+            assert rows['WB1']['pages_count'] == '2'
+            assert rows['WB2']['visuals_count'] == '4'
             assert rows['WB2']['visuals_with_values_count'] == '0'
             assert rows['WB2']['visuals_with_dax_measures_count'] == '0'
+            assert rows['WB2']['pages_count'] == '1'
 
 
 # ════════════════════════════════════════════════════════════════════════

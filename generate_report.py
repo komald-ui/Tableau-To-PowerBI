@@ -108,14 +108,17 @@ def _build_report_summary_rows(reports, metadata):
                           if tm.get("target_table") and not str(tm.get("target_table", "")).startswith("(")})
 
         measures = tmdl.get("measures", 0)
-        fallback_visuals = generated.get("visuals", 0)
-        if not fallback_visuals:
-            fallback_visuals = rep.get("summary", {}).get("by_category", {}).get("visual", {}).get("total", 0)
-
-        visuals = _count_visuals_with_values(meta)
-        if visuals == 0 and not meta.get("visual_details"):
-            visuals = fallback_visuals
-        visuals_with_values = visuals
+        pages = generated.get("pages", 0)
+        if not pages:
+            pages = len(meta.get("lineage", {}).get("worksheets", []) or [])
+        if not pages:
+            pages = objects.get("dashboards", 0) or objects.get("worksheets", 0)
+        visuals = generated.get("visuals", 0)
+        if not visuals:
+            visuals = rep.get("summary", {}).get("by_category", {}).get("visual", {}).get("total", 0)
+        visuals_with_values = _count_visuals_with_values(meta)
+        if visuals:
+            visuals_with_values = min(visuals_with_values, visuals)
         visuals_with_dax_measures = _count_visuals_with_dax_measures(meta)
         if visuals:
             visuals_with_dax_measures = min(visuals_with_dax_measures, visuals)
@@ -126,6 +129,7 @@ def _build_report_summary_rows(reports, metadata):
             "sources_count": int(sources or 0),
             "tables_count": int(tables or 0),
             "measures_count": int(measures or 0),
+            "pages_count": int(pages or 0),
             "visuals_count": int(visuals or 0),
             "visuals_with_values_count": int(visuals_with_values or 0),
             "visuals_with_dax_measures_count": int(visuals_with_dax_measures or 0),
@@ -142,6 +146,7 @@ def _write_summary_csv(csv_path, rows):
         "sources_count",
         "tables_count",
         "measures_count",
+        "pages_count",
         "visuals_count",
         "visuals_with_values_count",
         "visuals_with_dax_measures_count",
@@ -251,12 +256,7 @@ def generate_html(assessments, reports, metadata, lineage=None, pbi_validation=N
     total_columns = sum(m.get("tmdl_stats", {}).get("columns", 0) for m in metadata.values())
     total_relationships = sum(m.get("tmdl_stats", {}).get("relationships", 0) for m in metadata.values())
     total_pages = sum(m.get("generated_output", {}).get("pages", 0) for m in metadata.values())
-    total_visuals = 0
-    for m in metadata.values():
-        count = _count_visuals_with_values(m)
-        if count == 0 and not m.get("visual_details"):
-            count = int(m.get("generated_output", {}).get("visuals", 0) or 0)
-        total_visuals += count
+    total_visuals = sum(m.get("generated_output", {}).get("visuals", 0) for m in metadata.values())
     total_visuals_with_dax_measures = 0
     for m in metadata.values():
         count = _count_visuals_with_dax_measures(m)
@@ -295,7 +295,7 @@ def generate_html(assessments, reports, metadata, lineage=None, pbi_validation=N
             "columns": tmdl.get("columns", 0),
             "relationships": tmdl.get("relationships", 0),
             "pages": gen.get("pages", 0),
-            "visuals": _count_visuals_with_values(m) if m.get("visual_details") else gen.get("visuals", 0),
+            "visuals": gen.get("visuals", 0),
             "visuals_with_dax_measure": min(
                 _count_visuals_with_dax_measures(m),
                 _count_visuals_with_values(m) if m.get("visual_details") else int(m.get("generated_output", {}).get("visuals", 0) or 0)
