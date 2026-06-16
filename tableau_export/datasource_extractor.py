@@ -888,6 +888,68 @@ def _parse_connection_class(inner_conn, named_conn=None, twbx_path=None):
             'cube': ('cube', ''),
             'catalog': ('catalog', ''),
         }),
+        # Sprint 181: enterprise connector auto-detection
+        'dremio': ('Dremio', {
+            'server': ('server', ''),
+            'port': ('port', '31010'),
+            'schema': ('schema', ''),
+            'username': ('username', ''),
+        }),
+        'clickhouse': ('ClickHouse', {
+            'server': ('server', ''),
+            'port': ('port', '8123'),
+            'database': ('dbname', 'default'),
+            'username': ('username', ''),
+        }),
+        'singlestore': ('SingleStore', {
+            'server': ('server', ''),
+            'port': ('port', '3306'),
+            'database': ('dbname', ''),
+            'username': ('username', ''),
+        }),
+        'memsql': ('SingleStore', {
+            'server': ('server', ''),
+            'port': ('port', '3306'),
+            'database': ('dbname', ''),
+            'username': ('username', ''),
+        }),
+        'firebolt': ('Firebolt', {
+            'server': ('server', ''),
+            'database': ('dbname', ''),
+            'username': ('username', ''),
+        }),
+        'starburst': ('Starburst', {
+            'server': ('server', ''),
+            'port': ('port', '443'),
+            'catalog': ('catalog', ''),
+            'schema': ('schema', 'default'),
+            'username': ('username', ''),
+        }),
+        'trino': ('Starburst', {
+            'server': ('server', ''),
+            'port': ('port', '443'),
+            'catalog': ('catalog', ''),
+            'schema': ('schema', 'default'),
+            'username': ('username', ''),
+        }),
+        'db2': ('IBM Db2 Deep', {
+            'server': ('server', ''),
+            'port': ('port', '50000'),
+            'database': ('dbname', ''),
+            'schema': ('schema', ''),
+            'username': ('username', ''),
+        }),
+        'teradata': ('Teradata Deep', {
+            'server': ('server', ''),
+            'database': ('dbname', ''),
+            'username': ('username', ''),
+        }),
+        'vertica': ('Vertica', {
+            'server': ('server', ''),
+            'port': ('port', '5433'),
+            'database': ('dbname', ''),
+            'username': ('username', ''),
+        }),
     }
 
     # ── Special cases (need extra logic) ────────────────────────────────────

@@ -222,11 +222,11 @@ class TestParseConnectionClass(unittest.TestCase):
         self.assertEqual(result['type'], 'SAP BW')
 
     def test_unknown_connector_fallback(self):
-        xml = '<connection class="teradata" server="td.co" custom="val" />'
+        xml = '<connection class="exasol" server="ex.co" custom="val" />'
         elem = ET.fromstring(xml)
         result = _parse_connection_class(elem)
-        self.assertEqual(result['type'], 'TERADATA')
-        self.assertEqual(result['details']['server'], 'td.co')
+        self.assertEqual(result['type'], 'EXASOL')
+        self.assertEqual(result['details']['server'], 'ex.co')
         self.assertEqual(result['details']['custom'], 'val')
 
     def test_geojson_connection(self):

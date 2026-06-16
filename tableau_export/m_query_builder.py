@@ -970,6 +970,185 @@ def _gen_m_redshift_depth(details, table_name, columns):
     return m_query
 
 
+# ── Sprint 181: Enterprise Connector Expansion ───────────────────────────────
+
+def _gen_m_dremio(details, table_name, columns):
+    """Dremio lakehouse query engine via ODBC (Arrow Flight SQL driver)."""
+    server = _odbc_escape(details.get('server', 'localhost'))
+    port = details.get('port', '31010')
+    schema = _m_escape_string(details.get('schema', details.get('database', 'space')))
+    safe_table = _m_escape_string(table_name)
+    custom_sql = details.get('custom_sql', '')
+    if custom_sql:
+        m_query = 'let\n'
+        m_query += f'    // Source Dremio (Custom SQL): {server}:{port}\n'
+        m_query += f'    Source = Odbc.Query("DRIVER={{Dremio Connector}};'
+        m_query += f'HOST={server};PORT={port}",\n'
+        m_query += f'        "{_m_escape_string(custom_sql)}")\n'
+        m_query += 'in\n    Source'
+    else:
+        m_query = 'let\n'
+        m_query += f'    // Source Dremio: {server}:{port}/{schema}\n'
+        m_query += f'    Source = Odbc.DataSource("DRIVER={{Dremio Connector}};'
+        m_query += f'HOST={server};PORT={port}"),\n'
+        m_query += f'    #"{schema}" = Source{{[Name="{schema}"]}}[Data],\n'
+        m_query += f'    #"{safe_table} Table" = #"{schema}"{{[Name="{safe_table}"]}}[Data],\n'
+        m_query += f'    Result = #"{safe_table} Table"\nin\n    Result'
+    return m_query
+
+
+def _gen_m_clickhouse(details, table_name, columns):
+    """ClickHouse OLAP column store via ODBC."""
+    server = _odbc_escape(details.get('server', 'localhost'))
+    port = details.get('port', '8123')
+    database = _odbc_escape(details.get('database', 'default'))
+    safe_table = _m_escape_string(table_name)
+    custom_sql = details.get('custom_sql', '')
+    if custom_sql:
+        m_query = 'let\n'
+        m_query += f'    // Source ClickHouse (Custom SQL): {server}:{port}\n'
+        m_query += f'    Source = Odbc.Query("DRIVER={{ClickHouse ODBC Driver (Unicode)}};'
+        m_query += f'SERVER={server};PORT={port};DATABASE={database}",\n'
+        m_query += f'        "{_m_escape_string(custom_sql)}")\n'
+        m_query += 'in\n    Source'
+    else:
+        m_query = 'let\n'
+        m_query += f'    // Source ClickHouse: {server}:{port}/{database}\n'
+        m_query += f'    Source = Odbc.DataSource("DRIVER={{ClickHouse ODBC Driver (Unicode)}};'
+        m_query += f'SERVER={server};PORT={port};DATABASE={database}"),\n'
+        m_query += f'    #"{safe_table} Table" = Source{{[Name="{safe_table}"]}}[Data],\n'
+        m_query += f'    Result = #"{safe_table} Table"\nin\n    Result'
+    return m_query
+
+
+def _gen_m_singlestore(details, table_name, columns):
+    """SingleStore (MemSQL) — MySQL wire-compatible distributed SQL."""
+    server = details.get('server', 'localhost')
+    port = details.get('port', '3306')
+    database = details.get('database', 'memsql')
+    return _gen_m_schema_item(details, table_name, columns,
+                              f'SingleStore: {server}:{port}', 'MySQL.Database',
+                              f'{server}:{port}', database, database)
+
+
+def _gen_m_firebolt(details, table_name, columns):
+    """Firebolt cloud data warehouse via ODBC."""
+    engine = _odbc_escape(details.get('server', 'my-engine.firebolt.io'))
+    database = _odbc_escape(details.get('database', 'my_db'))
+    safe_table = _m_escape_string(table_name)
+    custom_sql = details.get('custom_sql', '')
+    if custom_sql:
+        m_query = 'let\n'
+        m_query += f'    // Source Firebolt (Custom SQL): {engine}\n'
+        m_query += f'    Source = Odbc.Query("DRIVER={{Firebolt ODBC}};'
+        m_query += f'ENGINE={engine};DATABASE={database}",\n'
+        m_query += f'        "{_m_escape_string(custom_sql)}")\n'
+        m_query += 'in\n    Source'
+    else:
+        m_query = 'let\n'
+        m_query += f'    // Source Firebolt: {engine}/{database}\n'
+        m_query += f'    Source = Odbc.DataSource("DRIVER={{Firebolt ODBC}};'
+        m_query += f'ENGINE={engine};DATABASE={database}"),\n'
+        m_query += f'    #"{safe_table} Table" = Source{{[Name="{safe_table}"]}}[Data],\n'
+        m_query += f'    Result = #"{safe_table} Table"\nin\n    Result'
+    return m_query
+
+
+def _gen_m_starburst(details, table_name, columns):
+    """Starburst Enterprise / Galaxy (Trino distribution) via ODBC."""
+    server = _odbc_escape(details.get('server', 'starburst.example.com'))
+    port = details.get('port', '443')
+    catalog = _m_escape_string(details.get('catalog', details.get('database', 'hive')))
+    schema = _m_escape_string(details.get('schema', 'default'))
+    safe_table = _m_escape_string(table_name)
+    custom_sql = details.get('custom_sql', '')
+    if custom_sql:
+        m_query = 'let\n'
+        m_query += f'    // Source Starburst (Custom SQL): {server}:{port}\n'
+        m_query += f'    Source = Odbc.Query("DRIVER={{Starburst ODBC Driver}};'
+        m_query += f'HOST={server};PORT={port};SSL=1",\n'
+        m_query += f'        "{_m_escape_string(custom_sql)}")\n'
+        m_query += 'in\n    Source'
+    else:
+        m_query = 'let\n'
+        m_query += f'    // Source Starburst: {server}:{port}/{catalog}/{schema}\n'
+        m_query += f'    Source = Odbc.DataSource("DRIVER={{Starburst ODBC Driver}};'
+        m_query += f'HOST={server};PORT={port};SSL=1"),\n'
+        m_query += f'    #"{catalog}" = Source{{[Name="{catalog}"]}}[Data],\n'
+        m_query += f'    #"{schema}" = #"{catalog}"{{[Name="{schema}"]}}[Data],\n'
+        m_query += f'    #"{safe_table} Table" = #"{schema}"{{[Name="{safe_table}"]}}[Data],\n'
+        m_query += f'    Result = #"{safe_table} Table"\nin\n    Result'
+    return m_query
+
+
+def _gen_m_db2_depth(details, table_name, columns):
+    """IBM Db2 with schema navigation and LUW/z-OS support."""
+    server = _m_escape_string(details.get('server', 'localhost'))
+    port = details.get('port', '50000')
+    database = _m_escape_string(details.get('database', 'SAMPLE'))
+    schema = _m_escape_string(details.get('schema', 'DB2INST1'))
+    safe_table = _m_escape_string(table_name)
+    custom_sql = details.get('custom_sql', '')
+    if custom_sql:
+        m_query = 'let\n'
+        m_query += f'    // Source IBM Db2 (Custom SQL): {server}:{port}/{database}\n'
+        m_query += f'    Source = DB2.Database("{server}:{port}", "{database}", '
+        m_query += f'[Query="{_m_escape_string(custom_sql)}"]),\n'
+        m_query += f'    Result = Source\nin\n    Result'
+    else:
+        m_query = 'let\n'
+        m_query += f'    // Source IBM Db2: {server}:{port}/{database}/{schema}\n'
+        m_query += f'    Source = DB2.Database("{server}:{port}", "{database}"),\n'
+        m_query += f'    #"{schema}" = Source{{[Schema="{schema}"]}}[Data],\n'
+        m_query += f'    #"{safe_table} Table" = #"{schema}"{{[Name="{safe_table}"]}}[Data],\n'
+        m_query += f'    Result = #"{safe_table} Table"\nin\n    Result'
+    return m_query
+
+
+def _gen_m_teradata_depth(details, table_name, columns):
+    """Teradata with database navigation and native query passthrough."""
+    server = _m_escape_string(details.get('server', 'teradata.example.com'))
+    database = _m_escape_string(details.get('database', 'DBC'))
+    safe_table = _m_escape_string(table_name)
+    custom_sql = details.get('custom_sql', '')
+    if custom_sql:
+        m_query = 'let\n'
+        m_query += f'    // Source Teradata (Custom SQL): {server}\n'
+        m_query += f'    Source = Teradata.Database("{server}", '
+        m_query += f'[Query="{_m_escape_string(custom_sql)}"]),\n'
+        m_query += f'    Result = Source\nin\n    Result'
+    else:
+        m_query = 'let\n'
+        m_query += f'    // Source Teradata: {server}/{database}\n'
+        m_query += f'    Source = Teradata.Database("{server}"),\n'
+        m_query += f'    #"{database}" = Source{{[Name="{database}"]}}[Data],\n'
+        m_query += f'    #"{safe_table} Table" = #"{database}"{{[Name="{safe_table}"]}}[Data],\n'
+        m_query += f'    Result = #"{safe_table} Table"\nin\n    Result'
+    return m_query
+
+
+def _gen_m_synapse_depth(details, table_name, columns):
+    """Azure Synapse Analytics (dedicated/serverless SQL pool) with schema nav."""
+    server = _m_escape_string(details.get('server', 'workspace.sql.azuresynapse.net'))
+    database = _m_escape_string(details.get('database', 'pool'))
+    schema = _m_escape_string(details.get('schema', 'dbo'))
+    safe_table = _m_escape_string(table_name)
+    custom_sql = details.get('custom_sql', '')
+    if custom_sql:
+        m_query = 'let\n'
+        m_query += f'    // Source Azure Synapse (Custom SQL): {server}/{database}\n'
+        m_query += f'    Source = Sql.Database("{server}", "{database}", '
+        m_query += f'[Query="{_m_escape_string(custom_sql)}"]),\n'
+        m_query += f'    Result = Source\nin\n    Result'
+    else:
+        m_query = 'let\n'
+        m_query += f'    // Source Azure Synapse: {server}/{database}/{schema}\n'
+        m_query += f'    Source = Sql.Database("{server}", "{database}"),\n'
+        m_query += f'    #"{safe_table} Table" = Source{{[Schema="{schema}", Item="{safe_table}"]}}[Data],\n'
+        m_query += f'    Result = #"{safe_table} Table"\nin\n    Result'
+    return m_query
+
+
 
 _M_GENERATORS = {
     'Excel':            _gen_m_excel,
@@ -1053,6 +1232,25 @@ _M_GENERATORS = {
     'splunk':           _gen_m_splunk,
     'SAP HANA Deep':    _gen_m_sap_hana_depth,
     'Redshift Deep':    _gen_m_redshift_depth,
+    # Sprint 181: Enterprise connector expansion
+    'Dremio':           _gen_m_dremio,
+    'dremio':           _gen_m_dremio,
+    'ClickHouse':       _gen_m_clickhouse,
+    'clickhouse':       _gen_m_clickhouse,
+    'SingleStore':      _gen_m_singlestore,
+    'singlestore':      _gen_m_singlestore,
+    'MemSQL':           _gen_m_singlestore,
+    'Firebolt':         _gen_m_firebolt,
+    'firebolt':         _gen_m_firebolt,
+    'Starburst':        _gen_m_starburst,
+    'starburst':        _gen_m_starburst,
+    'Starburst Galaxy': _gen_m_starburst,
+    'Trino Enterprise': _gen_m_starburst,
+    'Db2 Deep':         _gen_m_db2_depth,
+    'IBM Db2 Deep':     _gen_m_db2_depth,
+    'Teradata Deep':    _gen_m_teradata_depth,
+    'Synapse Deep':     _gen_m_synapse_depth,
+    'Azure Synapse Deep': _gen_m_synapse_depth,
 }
 
 
