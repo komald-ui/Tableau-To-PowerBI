@@ -25,7 +25,8 @@ class PatternMetadata:
     """Descriptor for a marketplace pattern."""
 
     __slots__ = ('name', 'version', 'author', 'description', 'tags',
-                 'category', 'tableau_function', 'created', 'updated')
+                 'category', 'tableau_function', 'created', 'updated',
+                 'dependencies')
 
     VALID_CATEGORIES = frozenset({
         'dax_recipe', 'visual_mapping', 'm_template',
@@ -42,6 +43,8 @@ class PatternMetadata:
         self.tableau_function = data.get('tableau_function', '')
         self.created = data.get('created', '')
         self.updated = data.get('updated', '')
+        # Marketplace v2: dependency specs like "base_pack>=1.0.0"
+        self.dependencies = list(data.get('dependencies', []))
 
     def matches(self, tags=None, category=None, name_pattern=None):
         """Check whether this pattern matches the given filter criteria."""
@@ -66,6 +69,7 @@ class PatternMetadata:
             'tableau_function': self.tableau_function,
             'created': self.created,
             'updated': self.updated,
+            'dependencies': self.dependencies,
         }
 
 
@@ -326,3 +330,142 @@ class PatternRegistry:
                 for n, v in self._patterns.items()
             ],
         }
+
+    # ── Marketplace v2: dependency tracking ──
+
+    def get_dependencies(self, name, version=None):
+        """Return the declared dependency specs for a pattern."""
+        pattern = self.get(name, version)
+        if not pattern:
+            return []
+        return list(pattern.metadata.dependencies)
+
+    def resolve_dependencies(self, name, version=None, _seen=None):
+        """Resolve the full transitive dependency closure for a pattern.
+
+        Returns:
+            dict with keys:
+                ``order``: list of pattern names in install order (deps first),
+                ``missing``: list of unmet dependency specs,
+                ``conflicts``: list of version-conflict messages.
+        """
+        order = []
+        missing = []
+        conflicts = []
+        seen = _seen if _seen is not None else set()
+
+        def _visit(pname, pver):
+            key = (pname, pver)
+            if key in seen:
+                return
+            seen.add(key)
+            pat = self.get(pname, pver)
+            if not pat:
+                missing.append(f"{pname}{('==' + pver) if pver else ''}")
+                return
+            for dep in pat.metadata.dependencies:
+                dname, op, dver = _split_dep_spec(dep)
+                target = self.get(dname)
+                if not target:
+                    missing.append(dep)
+                    continue
+                if dver and not _version_satisfies(
+                        _parse_version(target.version), op, _parse_version(dver)):
+                    conflicts.append(
+                        f"{pname} requires {dname}{op}{dver}, "
+                        f"have {target.version}")
+                _visit(dname, None)
+            if pname not in order:
+                order.append(pname)
+
+        _visit(name, version)
+        return {'order': order, 'missing': missing, 'conflicts': conflicts}
+
+    # ── Marketplace v2: remote catalogue sync ──
+
+    def sync_remote(self, catalogue_url, dest_dir=None, timeout=30, opener=None):
+        """Fetch a remote pattern catalogue and load it into the registry.
+
+        The remote endpoint must return a JSON array of pattern objects (same
+        shape as local pattern files: ``{metadata, payload}`` or a flat dict).
+        Designed for GitHub-release asset URLs but works with any HTTP(S) JSON.
+
+        Args:
+            catalogue_url: HTTP(S) URL returning a JSON array of patterns.
+            dest_dir: optional directory to cache fetched patterns as files.
+            timeout: socket timeout in seconds.
+            opener: optional callable(url, timeout) -> bytes (for testing /
+                offline injection). Defaults to urllib.
+
+        Returns:
+            int: number of patterns fetched and registered.
+        """
+        if opener is None:
+            opener = _default_url_opener
+        if not re.match(r'^https?://', catalogue_url):
+            raise ValueError(f"Unsupported catalogue URL scheme: {catalogue_url}")
+
+        raw = opener(catalogue_url, timeout)
+        if isinstance(raw, bytes):
+            raw = raw.decode('utf-8')
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            data = data.get('patterns', [data])
+        if not isinstance(data, list):
+            raise ValueError("Remote catalogue must be a JSON array of patterns")
+
+        count = 0
+        for entry in data:
+            pattern = self._parse_pattern(entry, catalogue_url)
+            if pattern:
+                self._register(pattern)
+                count += 1
+                if dest_dir:
+                    self._cache_pattern(pattern, dest_dir)
+        self._loaded = True
+        logger.info("Synced %d patterns from %s", count, catalogue_url)
+        return count
+
+    def _cache_pattern(self, pattern, dest_dir):
+        """Write a fetched pattern to the local cache directory."""
+        os.makedirs(dest_dir, exist_ok=True)
+        safe = re.sub(r'[^\w.\-]+', '_', f"{pattern.name}-{pattern.version}")
+        fpath = os.path.join(dest_dir, f"{safe}.json")
+        with open(fpath, 'w', encoding='utf-8') as f:
+            json.dump(pattern.to_dict(), f, indent=2, ensure_ascii=False)
+        return fpath
+
+
+# ── Marketplace v2 helpers ──
+
+def _split_dep_spec(spec):
+    """Split 'name>=1.2.0' → ('name', '>=', '1.2.0'). op/ver may be None."""
+    m = re.match(r'^([\w.\-]+)\s*([<>=!]=?)?\s*([\d.]+)?$', str(spec).strip())
+    if not m:
+        return str(spec).strip(), None, None
+    return m.group(1), m.group(2), m.group(3)
+
+
+def _version_satisfies(have, op, want):
+    """Compare two version tuples under a comparison operator."""
+    if op in (None, '=='):
+        return have == want
+    if op == '>=':
+        return have >= want
+    if op == '<=':
+        return have <= want
+    if op == '>':
+        return have > want
+    if op == '<':
+        return have < want
+    if op == '!=':
+        return have != want
+    return True
+
+
+def _default_url_opener(url, timeout):
+    """Fetch *url* with urllib (stdlib). Returns response bytes."""
+    import urllib.request
+    req = urllib.request.Request(url, headers={'User-Agent': 'tableau-to-powerbi-marketplace'})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+        return resp.read()
